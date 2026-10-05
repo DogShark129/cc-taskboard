@@ -21,11 +21,15 @@
 
    在 Claude Code 会话里等价的写法是先 `/plugin marketplace add DogShark129/cc-taskboard`，再 `/plugin install cc-taskboard@cc-taskboard`。需要有这个 GitHub 仓库的读权限。
 
-4. **重启 Claude Code。** 插件在会话启动时加载，已经开着的会话不会加载它。然后在任意会话里说「初始化看板」：Claude 会扫描你最近的会话，提出看板划分和工单，你确认之前什么都不写。之后随时用 `/kanban` 打开看板。
+4. **检查 Deno、git 和 gh。** 网页版跑在 Deno 2.x 上。`command -v deno` 找不到时，先问用户，再用 `brew install deno` 安装（没有 Homebrew 就用 `curl -fsSL https://deno.land/install.sh | sh`）。没有 Deno 时，面板和 ticket 工具照常能用，只有网页用不了。缺 git 或 gh 时，告诉用户自动状态规则需要它们，不要替用户装。
+
+5. **在当前会话里加载插件。** 请用户输入 `/reload-plugins`（Claude 不能执行斜杠命令）。装完之后新开的会话会自己加载；如果某个会话没有 `/reload-plugins`，就新开一个会话。
+
+6. **初始化看板。** 插件加载后，运行 ticket 工具的 init 向导（`mcp__cc-taskboard__ticket`，`action: "init"`），或者由用户说「初始化看板」。向导写入前会先请用户确认。之后随时用 `/kanban` 打开看板。
 
 ## 更新
 
-新版本只有在 `version` 变了时才会推给你。用 `claude plugin update cc-taskboard@cc-taskboard` 更新（或在 `/plugin` 的 **Installed** 页里更新），也可以在 `/plugin` → **Marketplaces** 里为这个 marketplace 打开自动更新。更新后重启会话。
+新版本只有在 `version` 变了时才会推给你。用 `claude plugin update cc-taskboard@cc-taskboard` 更新（或在 `/plugin` 的 **Installed** 页里更新），也可以在 `/plugin` → **Marketplaces** 里为这个 marketplace 打开自动更新。更新后在会话里输入 `/reload-plugins`，或者新开一个会话。
 
 ## 团队使用
 

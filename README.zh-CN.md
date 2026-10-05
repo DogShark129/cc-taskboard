@@ -23,17 +23,15 @@ cc-taskboard 用在两个地方：一个**本地网页**，在一处看清、管
 
 ## 安装
 
-1. 打开函数钩子插件：在 `~/.claude/settings.json` 的 `env` 里加上 `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"`。
-2. 在 Claude Code 里：
+在 Claude Code 里说：
 
-   ```
-   /plugin marketplace add DogShark129/cc-taskboard
-   /plugin install cc-taskboard@cc-taskboard
-   ```
+```
+安装 cc-taskboard：用 `gh api repos/DogShark129/cc-taskboard/contents/INSTALL.zh-CN.md -H "Accept: application/vnd.github.raw"` 读安装步骤，照着做
+```
 
-3. 重启 Claude Code，说一句「初始化看板」。
+Claude 请你输入 `/reload-plugins` 时照做，之后它会主动提出初始化看板。
 
-更新、团队配置、卸载：看 [INSTALL.zh-CN.md](INSTALL.zh-CN.md)。
+手动安装、更新、团队配置、卸载：看 [INSTALL.zh-CN.md](INSTALL.zh-CN.md)。
 
 ## 它做什么
 

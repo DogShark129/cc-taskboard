@@ -15,14 +15,14 @@ const BOARDS = [
 ]
 
 // opts.env: extra variables for env.get (every name is answered from here); opts.run: a process.run stub (else commands fail).
-function memfs(on: any, opts: { env?: Record<string, string>; run?: (_$: any, e: any) => unknown } = {}) {
+function memfs(on: any, opts: { env?: Record<string, string>; run?: (_$: any, e: any) => unknown; noDeno?: boolean } = {}) {
   const files = new Map<string, string>()
   files.set(`${DATA}/projects.json`, JSON.stringify(BOARDS))
   const ok = (value?: unknown) => ({ value })
   const env: Record<string, string> = { HOME, ...opts.env }
   on('env.get', (_$: any, e: any) => ok(env[e.name]))
   // Nothing runs for real: ensureWeb's shell line must never start a server on live data.
-  on('process.run', (_$: any, e: any) => (e.argv[0] !== '/bin/sh' && opts.run ? opts.run(_$, e) : ok({ exitCode: e.argv[0] === '/bin/sh' ? 0 : 1, stdout: '', stderr: '' })))
+  on('process.run', (_$: any, e: any) => (e.argv[0] !== '/bin/sh' && opts.run ? opts.run(_$, e) : ok({ exitCode: e.argv[0] === '/bin/sh' && !(opts.noDeno && /command -v deno/.test(e.argv[2])) ? 0 : 1, stdout: '', stderr: '' })))
   on('fs.exists', (_$: any, e: any) => ok([...files.keys()].some(p => p === e.path || p.startsWith(`${e.path}/`))))
   on('fs.read', (_$: any, e: any) => (files.has(e.path) ? ok(files.get(e.path)) : { deny: 'ENOENT' }))
   on('fs.write', (_$: any, e: any) => (files.set(e.path, e.text), ok()))
@@ -1142,4 +1142,28 @@ test('a click anywhere on a row opens its preview; a right click does nothing', 
     expect(await byKey(ui, 'pv-SVC-1')).toBeUndefined()
   }
   await ui.unmount()
+})
+
+// WB-40: no board yet, the first prompt has Claude offer the init wizard, later ones only on request; no deno, the first prompt offers to install it.
+test('first prompt offers init and a deno install, later prompts do not nag', async ($: any, on: any) => {
+  const contexts: string[] = []
+  on('prompt.submit', (_$: any, e: any) => (contexts.push((e.context ?? []).join('\n')), { text: e.text }))
+  const files = memfs(on, { noDeno: true })
+  files.delete(`${DATA}/projects.json`)
+  await $.session.start({ cwd: '/Users/x/app', surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: 'hi', wait: false })
+  expect(contexts.at(-1)).toContain('主动问用户要不要现在初始化')
+  expect(contexts.at(-1)).toContain('brew install deno')
+  await $.prompt.submit({ text: 'next', wait: false })
+  expect(contexts.at(-1)).toContain('用户要建票或说初始化时')
+  expect(contexts.at(-1)).not.toContain('deno')
+})
+
+test('deno found: no install offer', async ($: any, on: any) => {
+  const contexts: string[] = []
+  on('prompt.submit', (_$: any, e: any) => (contexts.push((e.context ?? []).join('\n')), { text: e.text }))
+  memfs(on)
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: 'hi', wait: false })
+  expect(contexts.at(-1)).not.toContain('deno')
 })

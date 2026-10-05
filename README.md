@@ -23,17 +23,15 @@ cc-taskboard lives in two places: a **local web page** where you see and manage 
 
 ## Install
 
-1. Turn on function-hook plugins: in `~/.claude/settings.json`, add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block.
-2. In Claude Code:
+In Claude Code, say:
 
-   ```
-   /plugin marketplace add DogShark129/cc-taskboard
-   /plugin install cc-taskboard@cc-taskboard
-   ```
+```
+Install cc-taskboard: read the steps with `gh api repos/DogShark129/cc-taskboard/contents/INSTALL.md -H "Accept: application/vnd.github.raw"` and follow them
+```
 
-3. Restart Claude Code and say `set up the task board`.
+When Claude asks you to type `/reload-plugins`, do so; it then offers to set up your boards.
 
-Updates, team setup and uninstall: [INSTALL.md](INSTALL.md).
+Manual steps, updates, team setup and uninstall: [INSTALL.md](INSTALL.md).
 
 ## What it does
 

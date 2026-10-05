@@ -21,11 +21,15 @@ The repository is its own plugin marketplace. These steps work for a person or f
 
    Inside a Claude Code session the same is `/plugin marketplace add DogShark129/cc-taskboard`, then `/plugin install cc-taskboard@cc-taskboard`. You need read access to the GitHub repository.
 
-4. **Restart Claude Code.** The plugin loads at session start; sessions that were already open do not pick it up. Then say `set up the task board` in any session: Claude scans your recent sessions, proposes boards and tickets, and writes nothing until you confirm. Open the board any time with `/kanban`.
+4. **Check Deno, git and gh.** The web page runs on Deno 2.x. If `command -v deno` finds nothing, ask the user first, then install it with `brew install deno` (without Homebrew: `curl -fsSL https://deno.land/install.sh | sh`). Without Deno the pane and the ticket tool still work; only the web page does not. If git or gh is missing, tell the user that the automatic status rules need them; do not install them for the user.
+
+5. **Load the plugin in this session.** Ask the user to type `/reload-plugins` (Claude cannot run slash commands). Sessions started after the install load it on their own; if a session has no `/reload-plugins`, start a new one.
+
+6. **Set up the boards.** Once the plugin is loaded, run the init wizard of the ticket tool (`mcp__cc-taskboard__ticket`, `action: "init"`), or the user says `set up the task board`. The wizard asks the user to confirm before it writes anything. Open the board any time with `/kanban`.
 
 ## Updates
 
-A release reaches you when its `version` changes. Update with `claude plugin update cc-taskboard@cc-taskboard` (or from the **Installed** tab of `/plugin`), or turn on auto-update for the marketplace under `/plugin` → **Marketplaces**. Restart your sessions afterwards.
+A release reaches you when its `version` changes. Update with `claude plugin update cc-taskboard@cc-taskboard` (or from the **Installed** tab of `/plugin`), or turn on auto-update for the marketplace under `/plugin` → **Marketplaces**. Afterwards type `/reload-plugins` in a session, or start a new one.
 
 ## For a team
 

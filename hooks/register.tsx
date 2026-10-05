@@ -74,6 +74,8 @@ let lastJson = ''
 let lastBoard: Board | null = null
 let briefed = false
 let lastBrief = Date.now()
+// No deno, no web app: the first prompt has Claude offer to install it (WB-40).
+let noDeno = false
 // The board docks itself in the pane sidebar; closing it by hand keeps it closed for the rest of the session.
 let paneWanted = true
 // Sessions the board spawned (their first prompt starts with 「认领 <KEY>」), listed in a shared file.
@@ -433,6 +435,7 @@ export const register: Register = on => {
     for (const name of ['kanban', 'taskboard']) await $.command.register({ name, description: '打开任务看板（所有 session 的 ticket）' })
     await $.command.register({ name: 'kanban-web', description: '启动网页版任务看板并给出地址' })
     void ensureWeb($)
+    void $.process.run(['/bin/sh', '-c', 'command -v deno || test -x "$HOME/.deno/bin/deno"'], { timeoutMs: 5000 }).then(r => { noDeno = r.exitCode !== 0 }, () => {})
     await $.tool.register({
       name: 'ticket',
       description: [
@@ -499,7 +502,7 @@ export const register: Register = on => {
     const tk = current()
     const proj = projOf(me.project)
     const lines = [
-      `[cc-taskboard] 本 session 项目：${proj ? `${proj.id}（${proj.name}）` : PROJECTS.length ? `未归属（建票时要先问用户归到 ${PROJECTS.map(p => p.id).join(' / ')} 哪个）` : '看板还没初始化（没有 board）：先跑 ticket 工具的 action:"init" 向导'}；当前 ticket：${tk ? `${tk.key}「${zhTitle(tk)}」${colOf(tk.col).name}` : '无'}。`,
+      `[cc-taskboard] 本 session 项目：${proj ? `${proj.id}（${proj.name}）` : PROJECTS.length ? `未归属（建票时要先问用户归到 ${PROJECTS.map(p => p.id).join(' / ')} 哪个）` : briefed ? '看板还没初始化（没有 board）：用户要建票或说初始化时，跑 ticket 工具的 action:"init" 向导' : '看板还没初始化（没有 board）：回答完这条消息后主动问用户要不要现在初始化，同意就跑 ticket 工具的 action:"init" 向导'}；当前 ticket：${tk ? `${tk.key}「${zhTitle(tk)}」${colOf(tk.col).name}` : '无'}。`,
     ]
     await loadAll($)
     const mineKeys = new Set(fold(all, [], Date.now()).tickets.filter(t => t.sids.includes(sid)).map(t => t.key))
@@ -514,6 +517,7 @@ export const register: Register = on => {
     if (half.length) lines.push(`这些 ticket 的标题 / 描述还缺一种语言（多半是用户在看板上自己写的，语言不定）：${half.map(x => `${x.key}「${titleOf(x, 'zh')}」缺 ${missingLang(x).join('、')}`).join('；')}。顺手用 mcp__cc-taskboard__ticket update 补齐：title / desc 放中文，title_en / desc_en 放英文。`)
     lastBrief = Date.now()
     if (!briefed) lines.push('开始做一个具体功能 / 修复前，用 mcp__cc-taskboard__ticket 先 list 查重再 create 或认领（规则见工具说明）；用户说「加到看板」时直接 create。')
+    if (!briefed && noDeno) lines.push('网页版（localhost:4790）需要 Deno，本机没找到：问用户要不要装（brew install deno，或 curl -fsSL https://deno.land/install.sh | sh），装好后请用户输入 /kanban-web 启动。')
     briefed = true
     return next({ ...e, context: [...(e.context ?? []), lines.join('\n')] })
   })
