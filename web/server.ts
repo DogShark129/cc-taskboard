@@ -1,7 +1,7 @@
 /// <reference lib="deno.ns" />
 // Local web app for cc-taskboard: same event logs as the mod, same fold (hooks/core.ts).
 // Run: deno run --allow-read --allow-write --allow-env --allow-net=127.0.0.1 --allow-run=claude,defaults web/server.ts
-import { COL_IDS, COLS, DATA_DIR, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, archivedCanceled, boardForWeek, cancelEv, descOf, fold, keepTo, parseLines, projName, restoreTo, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
+import { COL_IDS, COLS, DATA_DIR, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, aliasResolver, archivedCanceled, prefixRekeys, projectsJson, boardForWeek, cancelEv, descOf, fold, keepTo, parseLines, projName, restoreTo, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
 import type { Ev, K } from '../hooks/core.ts'
 import type { Sess, Ticket } from '../types/index.d.ts'
 
@@ -125,7 +125,7 @@ export function startServer(opts: Opts = {}) {
       // Canceled tickets archived in earlier weeks: only the search shows them (WB-28).
       archived: week ? [] : archivedCanceled(evs, r.board, lang).map(side),
       asOf: r.asOf, weeksBack: back, week,
-      projects: PROJECTS.map(p => ({ id: p.id, name: projName(lang, p.id), color: p.color, icon: p.icon })),
+      projects: PROJECTS.map(p => ({ id: p.id, name: projName(lang, p.id), name_zh: p.name, name_en: p.name_en ?? '', color: p.color, icon: p.icon })),
       cols: COLS.map(c => ({ id: c.id, name: tl(lang, `col.${c.id}` as K), color: c.color, icon: c.icon })),
       priorities: PRIORITIES.map(id => ({ id, color: PRIORITY_COLOR[id] })),
       i18n: I18N[lang],
@@ -153,8 +153,7 @@ export function startServer(opts: Opts = {}) {
     if (priority !== undefined && priority !== '' && !PRIORITIES.includes(priority as never)) throw new HttpError(400, `unknown priority ${priority}`)
     return await serial(async () => {
       const { evs } = await loadAll()
-      const alias = new Map(evs.filter(e => e.k === 'rekey' && e.text).sort((a, b) => a.t - b.t).map(e => [e.key, e.text as string]))
-      const resolve = (k: string) => { for (let i = 0; alias.has(k) && i < 10; i++) k = alias.get(k) as string; return k }
+      const { resolve } = aliasResolver(evs)
       const append = async (...lines: Omit<Ev, 't' | 'sid'>[]) => {
         const t = Date.now()
         await Deno.mkdir(`${data}/events`, { recursive: true })
@@ -176,6 +175,29 @@ export function startServer(opts: Opts = {}) {
           ...(Object.keys(meta).length ? [{ k: 'meta' as const, key, meta: meta as never }] : []),
         )
         return { ok: true, key }
+      }
+
+      // WB-34: the board settings page saves every board's prefix and names at once; a changed prefix rekeys that board's tickets.
+      if (type === 'boards') {
+        if (!Array.isArray(body.boards)) throw new HttpError(400, 'boards must be an array')
+        const rows = (body.boards as Record<string, unknown>[]).map(b => ({ from: str(b?.from, 'from'), id: str(b?.id, 'id').trim().toUpperCase(), name: str(b?.name, 'name').trim(), name_en: b?.name_en === undefined ? '' : str(b?.name_en, 'name_en').trim() }))
+        const conf = projectsJson()
+        if (rows.length !== conf.length || conf.some(c => rows.filter(r => r.from === c.id).length !== 1)) throw new HttpError(409, 'boards changed meanwhile: reload')
+        const next = conf.map(c => { const r = rows.find(x => x.from === c.id)!; return { ...c, id: r.id, name: r.name, ...(r.name_en ? { name_en: r.name_en } : { name_en: undefined }) } })
+        const err = setProjects(next) // validates; every load reads projects.json again anyway
+        if (err.length) throw new HttpError(400, err.join('; '))
+        const rekeys: Omit<Ev, 't' | 'sid'>[] = []
+        for (const r of rows.filter(r => r.from !== r.id)) {
+          const evs2 = prefixRekeys(evs, r.from, r.id)
+          if (typeof evs2 === 'string') throw new HttpError(400, evs2)
+          rekeys.push(...evs2)
+        }
+        // events first: a reader between the two writes sees the tickets under a board it does not know yet, never the reverse
+        if (rekeys.length) await append(...rekeys)
+        const tmp = `${data}/projects.json.tmp`
+        await Deno.writeTextFile(tmp, JSON.stringify(next, null, 1) + '\n')
+        await Deno.rename(tmp, `${data}/projects.json`)
+        return { ok: true, rekeyed: rekeys.length }
       }
 
       const key = resolve(str(body.key, 'key'))

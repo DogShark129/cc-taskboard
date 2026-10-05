@@ -167,6 +167,10 @@ dialog::backdrop{background:var(--backdrop)}
 .dlg h2{font-size:18px;margin:12px 0 10px;line-height:1.4}
 .dlg .sec{margin-bottom:14px}
 .dlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.cfg{display:grid;grid-template-columns:96px 1fr 1fr;gap:8px;align-items:center;margin-bottom:8px}
+.cfg input{border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);padding:6px 8px;font-size:13px;outline:none;min-width:0}
+.cfg input:focus{border-color:var(--accent)}
+.cfg .h{font-size:12px;color:var(--sub);font-weight:600}
 .fld{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;font-size:12px;color:var(--sub);font-weight:600}
 .fld input{border:1.5px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:13px;outline:none;font-weight:400}
 .fld .row{display:flex;gap:10px}.fld .row>*{flex:1}
@@ -257,6 +261,7 @@ dialog::backdrop{background:var(--backdrop)}
 </div>
 <dialog id="peek"></dialog>
 <dialog id="newDlg"></dialog>
+<dialog id="cfgDlg"></dialog>
 <div id="toast"></div>
 
 <script>
@@ -407,6 +412,7 @@ function renderSide() {
     const wait = T.filter(x => x.project === p.id && x.col === 'decide').length
     return `<div class="pj ${S.proj === p.id ? 'on' : ''}" data-act="proj" data-id="${p.id}"><span class="tile" style="--c:${p.color}">${ic(p.icon)}</span><span>${esc(p.name)}</span><span class="c">${open(p.id)}</span>${wait ? `<span class="w" title="${esc(t('to.decide', wait))}">${wait}</span>` : ''}</div>`
   }).join('') + `<div class="pj ${S.proj === 'ALL' ? 'on' : ''}" data-act="proj" data-id="ALL"><span class="tile" style="--c:var(--mute)">${ic('layers')}</span><span>${esc(t('w.lanes'))}</span><span class="c">${open()}</span></div>`
+    + `<button class="lnk" style="margin:10px 10px 0;text-align:left" data-act="boards">${esc(t('b.title'))}</button>`
 }
 
 function renderHead() {
@@ -662,12 +668,29 @@ function openNew() {
   dlg.showModal()
 }
 
+// WB-34: every board's prefix and names in one form; a changed prefix rekeys that board's tickets on save.
+// ponytail: no input is named id / name: a form's named inputs shadow form.id, and the submit handler checks e.target.id
+function openBoards() {
+  const dlg = $('#cfgDlg')
+  dlg.innerHTML = `<form class="dlg" id="cfgForm" method="dialog">
+    <div class="top"><b>${esc(t('b.title'))}</b><span class="sp"></span><button type="button" class="btn ghost" data-act="closecfg" title="${esc(t('w.close'))}">${ic('x')}</button></div>
+    <p class="hint">${esc(t('b.hint'))}</p>
+    <div class="cfg"><span class="h">${esc(t('b.prefix'))}</span><span class="h">${esc(t('b.name'))}</span><span class="h">${esc(t('b.name_en'))}</span></div>
+    ${S.D.projects.map(p => `<div class="cfg" data-from="${esc(p.id)}">
+      <input name="pfx" value="${esc(p.id)}" required maxlength="10" pattern="[A-Za-z][A-Za-z0-9]*" autocomplete="off" style="text-transform:uppercase;color:${p.color};font-weight:600">
+      <input name="nm" value="${esc(p.name_zh)}" required autocomplete="off">
+      <input name="nm_en" value="${esc(p.name_en)}" autocomplete="off"></div>`).join('')}
+    <div class="btns"><button type="button" class="btn" data-act="closecfg">${esc(t('w.cancel'))}</button><button class="btn primary" type="submit">${esc(t('w.save'))}</button></div></form>`
+  dlg.showModal()
+}
+
 // ---------- events ----------
 function nav(patch) { Object.assign(S, patch); render(true) }
 document.addEventListener('click', e => {
   const peek = $('#peek')
   if (e.target === peek) { S.peek = null; render(); return } // the backdrop is the dialog element itself
   if (e.target === $('#newDlg')) { $('#newDlg').close(); return }
+  if (e.target === $('#cfgDlg')) { $('#cfgDlg').close(); return }
   const el = e.target.closest('[data-act]')
   if (!el) return
   const d = el.dataset
@@ -686,6 +709,8 @@ document.addEventListener('click', e => {
     case 'back': S.sel = null; S.editing = null; location.hash = ''; render(true); break
     case 'new': openNew(); break
     case 'closenew': $('#newDlg').close(); break
+    case 'boards': openBoards(); break
+    case 'closecfg': $('#cfgDlg').close(); break
     case 'accept': run({ type: 'accept', key: S.sel }); break
     case 'reject': run({ type: 'reject', key: S.sel }); break
     // WB-28: the reason is optional; the browser's own prompt asks for it, Cancel there keeps the ticket
@@ -744,6 +769,12 @@ document.addEventListener('compositionend', () => { composing = false; if (pendi
 $('#peek').addEventListener('cancel', e => { if ($('#pkCmt')?.value.trim() && document.activeElement === $('#pkCmt')) e.preventDefault() })
 $('#peek').addEventListener('close', () => { if (S.peek) { S.peek = null; render() } })
 document.addEventListener('submit', e => {
+  if (e.target.id === 'cfgForm') {
+    const boards = [...e.target.querySelectorAll('.cfg[data-from]')].map(r => ({ from: r.dataset.from, id: r.querySelector('[name=pfx]').value.trim().toUpperCase(), name: r.querySelector('[name=nm]').value, name_en: r.querySelector('[name=nm_en]').value }))
+    // the old prefix is gone after a rename: a view on it falls back to all boards
+    run({ type: 'boards', boards }, j => { toast(t('b.saved', j.rekeyed)); if (S.proj !== 'ALL' && !S.D.projects.some(p => p.id === S.proj)) S.proj = 'ALL'; render(true) })
+    return
+  }
   if (e.target.id !== 'newForm') return
   const f = new FormData(e.target)
   const body = { type: 'create', title: f.get('title'), project: f.get('project'), desc: f.get('desc') }

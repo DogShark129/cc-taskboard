@@ -9,7 +9,7 @@ export const LEGACY_DATA_DIR = '.claude/weekly-board'
 
 // Boards come from <data>/projects.json (written by the ticket tool's init action), not from code.
 // match is a case-insensitive regex source tested against a session's cwd; the first board that matches owns it.
-export type ProjectConf = { id: string; name: string; name_en?: string; color?: string; icon?: string; root?: string; match: string }
+export type ProjectConf = { id?: string; name: string; name_en?: string; color?: string; icon?: string; root?: string; match: string }
 export type Project = Required<Omit<ProjectConf, 'name_en' | 'match'>> & { name_en?: string; match: RegExp }
 export const PROJECTS_FILE = 'projects.json'
 export const PROJECT_ID = /^[A-Z][A-Z0-9]{0,9}$/
@@ -17,17 +17,32 @@ const PALETTE_CYCLE = ['#8394e6', '#c98bb9', '#a58fd6', '#4fae9f', '#cfa255', '#
 // Filled in place, so every module holding the array sees a reload.
 export const PROJECTS: Project[] = []
 // Validates and loads a projects.json body; returns the errors and leaves PROJECTS untouched when there are any.
+// WB-34: a board without an id gets a default prefix: the initials of its English name (one word: its first three letters),
+// else of its name, else of its repo folder (cc-taskboard → CT), else B1, B2…; a clash gets a number on the end.
+export function defaultPrefix(p: { name?: string; name_en?: string; root?: string }, taken: Set<string>) {
+  const words = (s?: string) => (s ?? '').split(/[^A-Za-z0-9]+/).filter(w => /^[A-Za-z]/.test(w))
+  const from = [p.name_en, p.name, (p.root ?? '').split('/').filter(Boolean).at(-1)].map(words).find(w => w.length)
+  if (!from) { for (let n = 1; ; n++) if (!taken.has(`B${n}`)) return `B${n}` }
+  const base = (from.length === 1 ? from[0].slice(0, 3) : from.map(w => w[0]).join('')).toUpperCase().slice(0, 8)
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base}${n}`)) return `${base}${n}`
+}
+// True when a projects.json body has boards without an id: the loader writes the filled-in defaults back, so they stay put.
+export const missingIds = (raw: unknown) => Array.isArray(raw) && raw.some(p => p && typeof p === 'object' && !(p as ProjectConf).id)
 export function setProjects(raw: unknown): string[] {
   const list = Array.isArray(raw) ? raw as ProjectConf[] : []
   const err: string[] = Array.isArray(raw) ? [] : ['projects 要是数组']
   const next: Project[] = []
-  list.forEach((p, i) => {
+  const taken = new Set(list.map(p => p?.id).filter(Boolean) as string[])
+  list.forEach((conf, i) => {
+    const p = conf && !conf.id && conf.name ? { ...conf, id: defaultPrefix(conf, taken) } : conf
+    if (p?.id) taken.add(p.id)
     if (!p || !PROJECT_ID.test(p.id ?? '')) return err.push(`第 ${i + 1} 个 board 的 id 要是大写字母开头的前缀，如 APP`)
     if (next.some(x => x.id === p.id)) return err.push(`board id ${p.id} 重复`)
     if (!p.name) return err.push(`${p.id} 缺 name`)
     let match: RegExp
     try { match = new RegExp(p.match, 'i') } catch { return err.push(`${p.id} 的 match 不是合法正则`) }
-    next.push({ id: p.id, name: p.name, name_en: p.name_en, color: p.color ?? PALETTE_CYCLE[i % PALETTE_CYCLE.length], icon: p.icon ?? 'layers', root: p.root ?? '', match })
+    next.push({ id: p.id as string, name: p.name, name_en: p.name_en, color: p.color ?? PALETTE_CYCLE[i % PALETTE_CYCLE.length], icon: p.icon ?? 'layers', root: p.root ?? '', match })
   })
   if (!err.length) PROJECTS.splice(0, PROJECTS.length, ...next)
   return err
@@ -50,7 +65,7 @@ export const PRIORITY_COLOR: Record<string, string> = { P0: '#d9777a', P1: '#cfa
 // Every UI string the pane draws, in both languages; {0} {1} are filled by t(). Tool text and the prompts sent to Claude stay Chinese on purpose.
 export const ZH = {
   'col.decide': '等我拍板', 'col.todo': '待开工', 'col.doing': '进行中', 'col.follow': '待跟进', 'col.review': '待审核', 'col.done': '已完成', 'col.canceled': '已取消',
-  'fold.rekey': '从 {0} 移到 {1}',
+  'fold.rekey': '从 {0} 移到 {1}', 'fold.prefix': '编号从 {0} 改为 {1}',
   'kind.new': '新建', 'kind.move': '状态', 'kind.commit': '提交', 'kind.pr': 'PR', 'kind.comment': '评论',
   'l.days': '天', 'l.commits': '提交', 'l.comments': '评论', 'l.dropTo': '放到', 'l.blocked': '卡于', 'l.due': '截止',
   'due.left': '还剩 {0} 天', 'due.late': '逾期 {0} 天', 'due.today': '今天到期', 'due.bad': '日期要写成 YYYY-MM-DD',
@@ -84,6 +99,8 @@ export const ZH = {
   'fold.create': '新建「{0}」→ {1}', 'fold.move': '→ {0}', 'fold.reason': '（{0}）', 'fold.comment.me': '你 评论：{0}', 'fold.comment.claude': 'Claude 评论：{0}',
   // web app only
   'w.new': '新建工单', 'w.title': '标题', 'w.project': '项目', 'w.create': '创建', 'w.cancel': '取消', 'w.desc.opt': '描述（可选）', 'w.title.ph': '一句话说清要做什么',
+  'b.title': '看板设置', 'b.prefix': '编号前缀', 'b.name': '名称', 'b.name_en': '英文名', 'b.saved': '已保存，{0} 张票改了编号',
+  'b.hint': '改了前缀，这个看板的票会一起改编号，数字不变（WB-12 → KB-12），旧编号仍然搜得到、认得出；也可以改回以前的前缀。',
   'w.save': '保存', 'w.edit': '编辑', 'w.add': '发表评论', 'w.noopen': '在 Claude Code 的看板面板里点「开新会话做」', 'w.offline': '连接断开，正在重连…',
   'w.link': '网页版', 'cmd.web': '网页版看板：{0}',
   'hdr.search': '搜索…', 'hdr.feed': '动态',
@@ -96,7 +113,7 @@ export const I18N: Record<Lang, typeof ZH> = {
   zh: ZH,
   en: {
     'col.decide': 'Decision', 'col.todo': 'To do', 'col.doing': 'In progress', 'col.follow': 'Waiting', 'col.review': 'In review', 'col.done': 'Done', 'col.canceled': 'Canceled',
-    'fold.rekey': 'Moved from {0} to {1}',
+    'fold.rekey': 'Moved from {0} to {1}', 'fold.prefix': 'Key changed from {0} to {1}',
     'kind.new': 'New', 'kind.move': 'Status', 'kind.commit': 'Commit', 'kind.pr': 'PR', 'kind.comment': 'Comment',
     'l.days': 'd', 'l.commits': 'commits', 'l.comments': 'comments', 'l.dropTo': 'Drop to', 'l.blocked': 'blocked by', 'l.due': 'due',
     'due.left': '{0}d left', 'due.late': '{0}d overdue', 'due.today': 'due today', 'due.bad': 'Date must be YYYY-MM-DD',
@@ -130,6 +147,8 @@ export const I18N: Record<Lang, typeof ZH> = {
     'fold.create': 'Created "{0}" → {1}', 'fold.move': '→ {0}', 'fold.reason': ' ({0})', 'fold.comment.me': 'You commented: {0}', 'fold.comment.claude': 'Claude commented: {0}',
     // web app only
     'w.new': 'New ticket', 'w.title': 'Title', 'w.project': 'Project', 'w.create': 'Create', 'w.cancel': 'Cancel', 'w.desc.opt': 'Description (optional)', 'w.title.ph': 'What needs doing, in one line',
+    'b.title': 'Board settings', 'b.prefix': 'Key prefix', 'b.name': 'Name', 'b.name_en': 'English name', 'b.saved': 'Saved; {0} tickets got new keys',
+    'b.hint': 'A new prefix rekeys that board\'s tickets, numbers kept (WB-12 → KB-12); the old keys still find them; an earlier prefix can be used again.',
     'w.save': 'Save', 'w.edit': 'Edit', 'w.add': 'Comment', 'w.noopen': "Use 'Do in a new session' in the Claude Code board pane", 'w.offline': 'Disconnected, reconnecting...',
     'w.link': 'Web', 'cmd.web': 'Web board: {0}',
     'hdr.search': 'Search…', 'hdr.feed': 'Feed',
@@ -252,6 +271,15 @@ export function ownerOf(tk: Ticket, sessions: Sess[], now: number): string | und
 
 export const SYSTEM_SIDS = ['import', 'migrate', 'web']
 
+// Old key → the key it became, in time order. A key that becomes a ticket's key again (a prefix renamed back, WB-34)
+// stops being an alias, so WB-12 → KB-12 → WB-12 resolves to WB-12 instead of looping.
+export function aliasResolver(evs: Ev[]) {
+  const alias = new Map<string, string>()
+  for (const x of [...evs].sort((a, b) => a.t - b.t)) if (x.k === 'rekey' && x.text) { alias.set(x.key, x.text); alias.delete(x.text) }
+  const resolve = (k: string) => { for (let i = 0; alias.has(k) && i < 10; i++) k = alias.get(k) as string; return k }
+  return { alias, resolve }
+}
+
 export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): Board {
   const weekStart = weekStartOf(now)
   const map = new Map<string, Ticket>()
@@ -259,12 +287,7 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
   let commitsThisWeek = 0
   let createdThisWeek = 0
   const sorted = [...evs].sort((a, b) => a.t - b.t)
-  const alias = new Map(sorted.filter(x => x.k === 'rekey' && x.text).map(x => [x.key, x.text as string]))
-  const resolve = (k: string) => {
-    let key = k
-    for (let i = 0; alias.has(key) && i < 10; i++) key = alias.get(key) as string
-    return key
-  }
+  const { alias, resolve } = aliasResolver(sorted)
   for (const raw of sorted) {
     const ev = alias.size ? { ...raw, key: resolve(raw.key) } : raw
     // ponytail: 'ME' is the board that the oldest imported events (written before tickets carried a project) belong to
@@ -297,10 +320,10 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
     }
     if (ev.k === 'title') { if (ev.title) tk.title = ev.title; if (ev.title_en) tk.title_en = ev.title_en }
     if (ev.k === 'rekey') {
-      tk.aliases = [...(tk.aliases ?? []), raw.key]
+      if (raw.key !== tk.key && !tk.aliases?.includes(raw.key)) tk.aliases = [...(tk.aliases ?? []), raw.key]
       const from = tk.project
       tk.project = ev.project ?? tk.project
-      line = tl(l, 'fold.rekey', `${projName(l, from)} ${raw.key}`, `${projName(l, tk.project)} ${tk.key}`)
+      line = ev.by === 'me' ? tl(l, 'fold.prefix', raw.key, ev.text ?? tk.key) : tl(l, 'fold.rekey', `${projName(l, from)} ${raw.key}`, `${projName(l, tk.project)} ${tk.key}`)
       icon = 'move'
     }
     if (ev.k === 'meta' && ev.meta) Object.assign(tk, ev.meta)
@@ -321,7 +344,7 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
     if (line) {
       tk.log.push({ t: ev.t, sid: ev.sid, text: line })
       if (tk.log.length > 12) tk.log.shift()
-      feed.push({ t: ev.t, sid: ev.sid, key: tk.key, icon, text: line })
+      if (!(ev.k === 'rekey' && ev.by === 'me')) feed.push({ t: ev.t, sid: ev.sid, key: tk.key, icon, text: line }) // a prefix rename would flood the feed
     }
   }
   // Relations written before a rekey point at the old key.
@@ -339,6 +362,17 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
     commitsThisWeek,
     createdThisWeek,
   }
+}
+
+// WB-34: a board's new prefix rekeys every ticket it ever had, numbers kept (WB-12 → KB-12); by 'me' marks it a rename, not a move.
+// The old keys stay aliases until a ticket takes them again: renaming back to an old prefix is fine (aliasResolver).
+// Refused only while a ticket outside this board still carries the prefix.
+export function prefixRekeys(evs: Ev[], from: string, to: string): Omit<Ev, 't' | 'sid'>[] | string {
+  const { resolve } = aliasResolver(evs)
+  const current = [...new Set(evs.filter(x => x.k === 'create').map(x => resolve(x.key)))]
+  if (current.some(k => k.startsWith(`${to}-`))) return `还有票的编号是 ${to} 开头，换一个前缀`
+  const keys = current.filter(k => k.startsWith(`${from}-`))
+  return keys.map(key => ({ k: 'rekey', key, text: `${to}-${key.slice(from.length + 1)}`, project: to, by: 'me' }))
 }
 
 // Canceled tickets archived off the board in earlier weeks: a search reaches them (WB-28).

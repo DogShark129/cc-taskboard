@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, Col, Lang, Priority, Resolved, Sess, Ticket, View } from '../types'
 import {
   BAD, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
-  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
+  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, missingIds, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
 import type { Ev, InitPlan, K, ScanRow } from './core.ts'
 
@@ -94,8 +94,12 @@ function serial<T>(fn: () => Promise<T>) {
 // Boards live in projects.json (init writes it); re-read with the logs so a fresh init shows up in every session.
 async function loadProjects($: $) {
   const text = await $.fs.read(`${DATA}/projects.json`).catch(() => '')
-  if (text) try { setProjects(JSON.parse(text)) } catch {}
-  if (me.cwd && !me.project) me.project = projectFor(me.cwd)
+  let raw: unknown
+  try { raw = JSON.parse(text) } catch {}
+  // Boards without an id got a default prefix (WB-34): write it back so it stays put.
+  if (text && !setProjects(raw).length && missingIds(raw)) await serial(() => $.fs.write(`${DATA}/projects.json`, JSON.stringify(projectsJson(), null, 1) + '\n'))
+  // A renamed prefix (WB-34) leaves this session's board unknown: find it again from the cwd.
+  if (me.cwd && (!me.project || !projOf(me.project))) me.project = projectFor(me.cwd)
 }
 
 async function loadAll($: $) {
@@ -741,7 +745,8 @@ export const register: Register = on => {
     const bigTitle = e.surface === 'desktop' && Boolean(els.Markdown)
     const { Box, Text, Button } = els
     const cur = await read($, board)
-    const v = await read($, view)
+    // A board whose prefix was renamed (WB-34) is gone: show them all.
+    const v = await read($, view).then(x => (x.proj === 'ALL' || projOf(x.proj) ? x : { ...x, proj: 'ALL' }))
     const maxBack = weeksBack(all, Date.now())
     const wk = Math.min(v.week ?? 0, maxBack)
     const past = wk > 0 ? boardForWeek(all, Date.now(), wk, lang) : null

@@ -141,7 +141,7 @@ Everything is local; nothing leaves your machine. The data directory is `~/.clau
 
 - `events/<session-id>.jsonl`: one append-only event log per session; `events/web.jsonl` holds the web app's writes, `events/init-<date>.jsonl` one init wizard run.
 - `sessions/<session-id>.json`: each session's state (current ticket, busy / idle, last seen).
-- `projects.json`: the boards. A list of `{ "id": "APP", "name": "...", "name_en": "...", "match": "<regex on the session's cwd>", "root": "<default repo path>", "color": "#8394e6", "icon": "grid" }`; `id` is the ticket key prefix, the first board whose `match` fits a session's working directory owns it. The init wizard writes this file; you can edit it by hand.
+- `projects.json`: the boards. A list of `{ "id": "APP", "name": "...", "name_en": "...", "match": "<regex on the session's cwd>", "root": "<default repo path>", "color": "#8394e6", "icon": "grid" }`; `id` is the ticket key prefix, the first board whose `match` fits a session's working directory owns it. Leave `id` out and the board gets a default prefix (its English name's initials, e.g. Board Dev → BD; a one-word name gives its first three letters), written back to the file. The init wizard writes this file; you can edit it by hand, or change every board's prefix and names on the web app's **Board settings** page: a new prefix rekeys that board's tickets with their numbers kept (WB-12 → KB-12), and the old keys still find them. Changing back to an earlier prefix is fine.
 - `spawned.json`: sessions the board opened (their titles follow their ticket).
 - `web.log`: the web app's output.
 

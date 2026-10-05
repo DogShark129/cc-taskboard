@@ -141,7 +141,7 @@ deno run --allow-read --allow-write --allow-env --allow-net=127.0.0.1 --allow-ru
 
 - `events/<会话 id>.jsonl`：每个会话一份只追加的事件日志；`events/web.jsonl` 是网页版的写入，`events/init-<日期>.jsonl` 是一次初始化向导的写入。
 - `sessions/<会话 id>.json`：每个会话的状态（当前工单、忙 / 闲、最后活跃时间）。
-- `projects.json`：board 配置。一个列表，每项形如 `{ "id": "APP", "name": "...", "name_en": "...", "match": "<匹配会话 cwd 的正则>", "root": "<默认仓库路径>", "color": "#8394e6", "icon": "grid" }`；`id` 是工单编号前缀，第一个 `match` 命中会话工作目录的 board 拥有该会话。初始化向导会写这个文件，你也可以手改。
+- `projects.json`：board 配置。一个列表，每项形如 `{ "id": "APP", "name": "...", "name_en": "...", "match": "<匹配会话 cwd 的正则>", "root": "<默认仓库路径>", "color": "#8394e6", "icon": "grid" }`；`id` 是工单编号前缀，第一个 `match` 命中会话工作目录的 board 拥有该会话。不写 `id` 时自动给一个默认前缀（取英文名首字母，如 Board Dev → BD；名字只有一个词时取前三个字母），并写回文件。初始化向导会写这个文件，你也可以手改，或者在 web 版的**看板设置**页统一改所有看板的前缀和名称：改了前缀，这个看板的票会一起改编号、数字不变（WB-12 → KB-12），用旧编号还能找到；也可以改回以前的前缀。
 - `spawned.json`：看板开出来的会话（它们的标题跟着工单走）。
 - `web.log`：网页版的输出。
 

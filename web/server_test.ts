@@ -262,3 +262,47 @@ Deno.test('index.html: cancel / confirm / keep / restore buttons post their own 
   const html = await Deno.readTextFile(new URL('./index.html', import.meta.url))
   for (const s of ["b('confirm', 'cancel.ok'", "b('keep', 'cancel.keep')", "b('restore', 'restore')", "b('cancel', 'cancel')", "run({ type: 'cancel', key: d.key, text: why })", 'drop-only']) assertStringIncludes(html, s)
 })
+
+// WB-34: the board settings page saves prefixes and names; a new prefix rekeys the board, old keys keep working.
+Deno.test('boards: rename a prefix and names, and back again; stale or clashing prefixes are refused', () => withServer(null, async ({ data, post, board }) => {
+  const b0 = await board()
+  assertEquals(b0.projects.find((p: any) => p.id === 'WB'), { id: 'WB', name: '看板开发', name_zh: '看板开发', name_en: 'Board Dev', color: '#c98bb9', icon: 'grid' })
+  const rows = b0.projects.map((p: any) => ({ from: p.id, id: p.id, name: p.name_zh, name_en: p.name_en }))
+  const wb = rows.find((r: any) => r.from === 'WB')
+  wb.id = 'kb'; wb.name = '任务看板'
+  const r = await post({ type: 'boards', boards: rows })
+  assertEquals([r.status, await r.json()], [200, { ok: true, rekeyed: 2 }])
+  const b = await board()
+  assertEquals(b.projects.map((p: any) => p.id), ['SVC', 'KB', 'INF', 'ME'])
+  assertEquals(b.projects[1].name, '任务看板')
+  assertEquals(b.board.tickets.filter((t: any) => t.project === 'KB').map((t: any) => t.key).sort(), ['KB-10', 'KB-3'])
+  const conf = JSON.parse(await Deno.readTextFile(`${data}/projects.json`))
+  assertEquals([conf[1].id, conf[1].match, conf[1].color], ['KB', 'cc-taskboard|kanban', '#c98bb9']) // the rest of the board stays
+  // old keys still act on the ticket; a new ticket continues the numbers
+  assertEquals((await post({ type: 'move', key: 'WB-3', col: 'review' })).status, 200)
+  assertEquals(colOf(await board(), 'KB-3'), 'review')
+  assertEquals((await (await post({ type: 'create', title: 'n', project: 'KB' })).json()).key, 'KB-11')
+  // a stale page (still lists WB) is refused
+  const stale = rows.map((x: any) => ({ ...x, id: x.from }))
+  assertEquals((await post({ type: 'boards', boards: stale })).status, 409)
+  // back to WB: allowed; every key the ticket had still finds it
+  const back = rows.map((x: any) => ({ ...x, from: x.from === 'WB' ? 'KB' : x.from, id: x.from === 'WB' ? 'WB' : x.id }))
+  assertEquals(await (await post({ type: 'boards', boards: back })).json(), { ok: true, rekeyed: 3 })
+  for (const k of ['KB-3', 'WB-3']) assertEquals((await post({ type: 'comment', key: k, text: k })).status, 200)
+  const t3 = (await board()).board.tickets.find((t: any) => t.key === 'WB-3')
+  assertEquals([t3.project, t3.aliases, t3.comments.map((c: any) => c.text)], ['WB', ['KB-3'], ['KB-3', 'WB-3']])
+  assertEquals((await (await post({ type: 'create', title: 'm', project: 'WB' })).json()).key, 'WB-12')
+  // a prefix another board's tickets carry is refused, so is a duplicate board id
+  const clash = (await board()).projects.map((p: any) => ({ from: p.id, id: p.id === 'WB' ? 'SVC' : p.id, name: p.name_zh, name_en: p.name_en }))
+  assertEquals((await post({ type: 'boards', boards: clash })).status, 400)
+  const dup = (await board()).projects.map((p: any) => ({ from: p.id, id: p.id === 'INF' ? 'SVC' : p.id, name: p.name_zh, name_en: p.name_en }))
+  assertEquals((await post({ type: 'boards', boards: dup })).status, 400)
+}))
+
+Deno.test('index.html: the board settings form posts type boards', async () => {
+  const html = await Deno.readTextFile(new URL('./index.html', import.meta.url))
+  for (const s of ["data-act=\"boards\"", "id=\"cfgForm\"", "type: 'boards'"]) assertStringIncludes(html, s)
+  // a field named id would shadow form.id and the submit handler would never see cfgForm
+  const form = html.slice(html.indexOf('id="cfgForm"'), html.indexOf('</form>', html.indexOf('id="cfgForm"')))
+  assert.ok(!/name="(id|name)"/.test(form), 'cfgForm has a field named id or name')
+})

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { boardForWeek, dayLabel, fold, ownerOf, resolveTheme, sessionTitle, splitCode, weeksBack } from './register.tsx'
-import { archivedCanceled, keepTo, planInit, restoreTo, scanRow, setProjects, staleTitles } from './core.ts'
+import { PROJECTS, archivedCanceled, defaultPrefix, keepTo, missingIds, planInit, prefixRekeys, restoreTo, scanRow, setProjects, staleTitles } from './core.ts'
 
 const NOW = new Date(2026, 9, 3, 15).getTime() // Sat 2026-10-03, week starts Mon 09-28
 const H = 3_600_000
@@ -227,4 +227,52 @@ test('fold: cancel proposal, the person cancel line, restore target, archived ca
   // ME-1 was canceled 10 days ago: off the board, but in the search pool
   expect(b.tickets.map(t => t.key)).toEqual(['SVC-1'])
   expect(archivedCanceled(evs, b).map(t => t.key)).toEqual(['ME-1'])
+})
+
+// WB-34: default prefixes, and a prefix rename that rekeys a board's tickets.
+test('defaultPrefix: English initials, one word its first three letters, else the name, else the repo folder, else B1; clashes get a number', async () => {
+  const none = new Set<string>()
+  expect(defaultPrefix({ name: '看板开发', name_en: 'Board Dev' }, none)).toBe('BD')
+  expect(defaultPrefix({ name: 'Infra' }, none)).toBe('INF')
+  expect(defaultPrefix({ name: 'SDS 重写' }, none)).toBe('SDS')
+  expect(defaultPrefix({ name: '看板开发', root: '/Users/x/cc-taskboard' }, none)).toBe('CT')
+  expect(defaultPrefix({ name: '私人' }, new Set(['B1']))).toBe('B2')
+  expect(defaultPrefix({ name: 'Board Dev' }, new Set(['BD', 'BD2']))).toBe('BD3')
+  const before = PROJECTS.slice()
+  const raw = [{ id: 'BD', name: '旧的', match: 'x' }, { name: '看板开发', name_en: 'Board Dev', match: 'y' }]
+  expect(missingIds(raw)).toBe(true)
+  expect(setProjects(raw)).toEqual([])
+  expect(PROJECTS.map(p => p.id)).toEqual(['BD', 'BD2']) // an explicit id keeps its prefix, the default steps aside
+  PROJECTS.splice(0, PROJECTS.length, ...before)
+})
+
+test('prefixRekeys: every ticket the board ever had, numbers kept; old keys still land; renaming back works', async () => {
+  const evs: any[] = [
+    { t: NOW - 3 * H, sid: 's1', k: 'create', key: 'WB-3', project: 'WB', title: 'a', col: 'doing' },
+    { t: NOW - 3 * H, sid: 's1', k: 'create', key: 'ME-11', project: 'ME', title: 'b', col: 'todo' },
+    { t: NOW - 2 * H, sid: 's1', k: 'rekey', key: 'ME-11', project: 'WB', text: 'WB-10' },
+    { t: NOW - 20 * 24 * H, sid: 's1', k: 'create', key: 'WB-1', project: 'WB', title: 'old', col: 'done' }, // archived
+    { t: NOW - 3 * H, sid: 's1', k: 'create', key: 'SVC-1', project: 'SVC', title: 'c', col: 'todo' },
+  ]
+  const r = prefixRekeys(evs, 'WB', 'KB') as any[]
+  expect(r.map(x => `${x.key}>${x.text}`).sort()).toEqual(['WB-10>KB-10', 'WB-1>KB-1', 'WB-3>KB-3'])
+  expect(r.every(x => x.k === 'rekey' && x.project === 'KB' && x.by === 'me')).toBe(true)
+  const all = [...evs, ...r.map(x => ({ ...x, t: NOW - H, sid: 'web' })), { t: NOW - H / 2, sid: 's1', k: 'move', key: 'WB-3', col: 'review' }]
+  const b = fold(all, [], NOW)
+  const tk = b.tickets.find(x => x.key === 'KB-3')!
+  expect([tk.project, tk.col, tk.aliases]).toEqual(['KB', 'review', ['WB-3']]) // a late event on the old key still lands
+  expect(b.tickets.find(x => x.key === 'KB-10')?.aliases).toEqual(['ME-11', 'WB-10'])
+  expect(tk.log.at(-2)?.text).toBe('编号从 WB-3 改为 KB-3')
+  expect(b.feed.some(f => f.text.includes('编号从'))).toBe(false) // a rename stays out of the feed
+  expect(prefixRekeys(all, 'KB', 'SVC')).toContain('还有票的编号是 SVC 开头') // SVC-1 is a current key
+  // back to WB (an earlier prefix): no alias loop, every old key lands on the same ticket
+  const back = prefixRekeys(all, 'KB', 'WB') as any[]
+  expect(back.map(x => `${x.key}>${x.text}`).sort()).toEqual(['KB-10>WB-10', 'KB-1>WB-1', 'KB-3>WB-3'])
+  const again = [...all, ...back.map(x => ({ ...x, t: NOW - H / 4, sid: 'web' })), { t: NOW - H / 8, sid: 's1', k: 'comment', key: 'KB-3', by: 'me', text: 'via KB' }]
+  const b2 = fold(again, [], NOW)
+  const t3 = b2.tickets.find(x => x.key === 'WB-3')!
+  expect([t3.project, t3.aliases, t3.comments.at(-1)?.text]).toEqual(['WB', ['KB-3'], 'via KB'])
+  expect(b2.tickets.find(x => x.key === 'WB-10')?.aliases).toEqual(['ME-11', 'KB-10'])
+  expect(b2.tickets.some(x => x.key.startsWith('KB-'))).toBe(false)
+  expect(t3.log.slice(-4, -1).map(x => x.text)).toEqual(['编号从 WB-3 改为 KB-3', '→ 待审核', '编号从 KB-3 改为 WB-3'])
 })
