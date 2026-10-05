@@ -4,7 +4,32 @@
 
 cc-taskboard 是一个 Claude Code 插件：在你所有的 Claude Code 会话之间维护同一块 Jira 风格的任务看板。每个会话把自己在做的事写进一份共享的本地事件日志；每个会话（以及一个本地网页版）都把这些日志折叠成同一块看板。Claude 拿到一个 `ticket` 工具来建票、改票；Claude 提交代码、开 PR、合并 PR 或向你提问时，插件会自己挪票。你负责审核、评论、拖拽和验收；你的评论会唤醒负责这张票的会话。
 
-功能：
+## 快速开始
+
+**1. 打开 function-hook 插件**（只需一次）。把下面这段加进 `~/.claude/settings.json`，和已有内容合并：
+
+```json
+{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
+```
+
+也可以让 Claude 来改：在任意会话里说 *「在我的 ~/.claude/settings.json 的 env 里加上 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1」*。
+
+**2. 安装。** 在任意 Claude Code 会话里（终端或桌面 app 的 Code tab）：
+
+```
+/plugin marketplace add DogShark129/cc-taskboard
+/plugin install cc-taskboard@cc-taskboard
+```
+
+**3. 重启 Claude Code，然后建看板。** 在任意会话里说：
+
+```
+初始化看板
+```
+
+Claude 会扫描你最近的会话，提出看板划分（每个项目一个）和工单，你确认之前什么都不写。之后随时用 `/kanban` 打开看板。
+
+## 功能
 
 - 跨所有 Claude Code 会话的 Jira 风格看板，在每个会话里以面板形式显示。
 - 给 Claude 的 `ticket` 工具（`mcp__cc-taskboard__ticket`）：list、create、update，以及初始化向导。
@@ -26,36 +51,7 @@ cc-taskboard 是一个 Claude Code 插件：在你所有的 Claude Code 会话�
 - 桌面 app 相关功能需要 macOS：主题跟随、会话标题、初始化向导扫描最近会话，都读 Claude 桌面 app 在 `~/Library/Application Support/Claude/` 下的文件。看板本身在别的系统上也能用。
 - 网页版需要 [Deno](https://deno.com) 2.x（可选；会话里的看板不需要）。
 - `git` 和 `gh` 可选，它们驱动自动状态规则。
-
-## 安装
-
-1. 把仓库克隆到一个固定位置：
-
-   ```sh
-   git clone <repo-url> ~/code/cc-taskboard
-   ```
-
-2. 在 `~/.claude/settings.json` 的 `env` 里加上插件目录（和已有内容合并）：
-
-   ```json
-   {
-     "env": {
-       "CLAUDE_CODE_PLUGIN_DIRS": "/Users/you/code/cc-taskboard",
-       "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
-       "CLAUDE_CODE_PLUGIN_DIR_WATCH": "1"
-     }
-   }
-   ```
-
-   - `CLAUDE_CODE_PLUGIN_DIRS`：插件目录的绝对路径（可以用 `~`；多个用 `:` 分隔）。
-   - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`：打开 function-hook 插件。
-   - `CLAUDE_CODE_PLUGIN_DIR_WATCH=1`（可选）：长时间运行的会话（桌面 app、SDK）在插件文件变化时自动重载。交互式终端会话本来就会监视该目录。
-
-   想先在单个终端会话里试：`claude --plugin-dir ~/code/cc-taskboard`（环境里要有 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`）。
-
-3. 重启 Claude Code 会话。插件在会话启动时加载，已经开着的会话不会加载它。
-
-4. 首次使用：用 `/kanban`（或 `/taskboard`）打开看板。新装的看板没有 board，看板上会这样提示。在任意会话里对 Claude 说「初始化看板」（或 "set up the task board"）。Claude 会跑初始化向导：扫描你最近 50 个桌面会话，提出 board 划分（每个项目或仓库一个）和工单，先给你看预览，你确认之前什么都不写。
+- 有这个 GitHub 仓库的读权限。
 
 ## 使用
 
@@ -164,6 +160,7 @@ deno test --allow-all web/
 - `hooks/core.ts` 是插件和网页版共用的纯逻辑；改了它要重启网页版。
 - `.claude-plugin/types/` 由 Claude Code 生成，用于编辑器类型检查，不提交（`tsconfig.json` 继承它）。
 - 路径里含 `/dev-mods/` 的插件副本永远不会启动网页版。
+- 发布新版本时改 `.claude-plugin/plugin.json` 里的 `version`：已安装的副本只在它变化时才更新。
 
 ### 多会话同时修改
 
@@ -174,12 +171,67 @@ deno test --allow-all web/
 3. 同步永远不用 `--delete`。先预演（`rsync -n`），并排除 `.claude-plugin/types/`、`web.log` 和 `.claude/`（后者是在该目录工作的会话的插件状态，在暂存副本里是旧的）。要查暂存期间源码有没有被改，用 `find <源码目录> -newer <数据目录>/EDITING`，不要拿复制出来的文件作参照（`rsync -a` 会保留 mtime）。
 4. 同步前的保护检查不要写成 `set -e` 加 `test ... && echo`：这种写法检查失败时脚本照样往下跑。
 
+## 更多安装方式
+
+### 在 shell 里安装
+
+```sh
+claude plugin marketplace add DogShark129/cc-taskboard
+claude plugin install cc-taskboard@cc-taskboard
+```
+
+### 更新
+
+新版本只有在 `version` 变了时才会推给你。用 `claude plugin update cc-taskboard@cc-taskboard` 更新（或在 `/plugin` 的 **Installed** 页里更新），也可以在 `/plugin` → **Marketplaces** 里为这个 marketplace 打开自动更新。更新后重启会话。
+
+### 团队使用
+
+想在团队共用的某个仓库里提供这个插件，在那个仓库的 `.claude/settings.json` 里加上：
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "cc-taskboard": { "source": { "source": "github", "repo": "DogShark129/cc-taskboard" } }
+  },
+  "enabledPlugins": { "cc-taskboard@cc-taskboard": true }
+}
+```
+
+每个队友仍然要做「快速开始」的第 1 步，并且要有仓库的读权限。
+
+### 从克隆加载（开发用）
+
+1. 把仓库克隆到一个固定位置：
+
+   ```sh
+   git clone https://github.com/DogShark129/cc-taskboard.git ~/code/cc-taskboard
+   ```
+
+2. 在 `~/.claude/settings.json` 的 `env` 里加上插件目录：
+
+   ```json
+   {
+     "env": {
+       "CLAUDE_CODE_PLUGIN_DIRS": "/Users/you/code/cc-taskboard",
+       "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
+       "CLAUDE_CODE_PLUGIN_DIR_WATCH": "1"
+     }
+   }
+   ```
+
+   - `CLAUDE_CODE_PLUGIN_DIRS`：插件目录的绝对路径（可以用 `~`；多个用 `:` 分隔）。
+   - `CLAUDE_CODE_PLUGIN_DIR_WATCH=1`（可选）：长时间运行的会话（桌面 app、SDK）在插件文件变化时自动重载。交互式终端会话本来就会监视该目录。
+
+   想先在单个终端会话里试：`claude --plugin-dir ~/code/cc-taskboard`（环境里要有 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`）。
+
+不要同时再从 marketplace 安装一份，否则两份都会追踪每个会话。
+
 ## 卸载
 
-1. 从 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 里去掉仓库路径（如果没有别的插件需要，也去掉 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` / `CLAUDE_CODE_PLUGIN_DIR_WATCH`）。
+1. 运行 `claude plugin uninstall cc-taskboard@cc-taskboard`（再 `claude plugin marketplace remove cc-taskboard`）。如果是从克隆加载的：从 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 里去掉仓库路径。如果没有别的插件需要，也去掉 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` / `CLAUDE_CODE_PLUGIN_DIR_WATCH`。
 2. 重启会话。
-3. 停掉网页版：`pkill -f cc-taskboard/web/server.ts`。
-4. 可选：删除数据目录 `~/.claude/cc-taskboard/` 和仓库。
+3. 停掉网页版：`pkill -f 'cc-taskboard.*/web/server.ts'`。
+4. 可选：删除数据目录 `~/.claude/cc-taskboard/`（以及克隆的仓库）。
 
 ## 从 weekly-board 迁移
 

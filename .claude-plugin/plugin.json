@@ -2,6 +2,6 @@
   "name": "cc-taskboard",
   "version": "0.2.0",
   "description": "Jira-style task board that tracks tickets across all your Claude Code sessions",
-  "author": { "name": "Fan Wu" },
+  "author": { "name": "DogShark129" },
   "types": "./types/index.d.ts"
 }

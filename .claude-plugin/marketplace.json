@@ -1,0 +1,12 @@
+{
+  "name": "cc-taskboard",
+  "description": "cc-taskboard: a Jira-style task board across all your Claude Code sessions",
+  "owner": { "name": "DogShark129" },
+  "plugins": [
+    {
+      "name": "cc-taskboard",
+      "source": "./",
+      "description": "Jira-style task board that tracks tickets across all your Claude Code sessions"
+    }
+  ]
+}
