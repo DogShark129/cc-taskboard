@@ -74,7 +74,7 @@ export type Board = {
 export type Resolved = 'light' | 'dark'
 export type Theme = 'auto' | Resolved
 // off: statuses the legend hid; more: sections expanded past their narrow cap; todoOpen / doneOpen / canceledOpen: the folds under the list.
-export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; lang?: Lang; theme?: Theme; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; off?: Col[]; more?: Col[]; todoOpen?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
+export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; lang?: Lang; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; off?: Col[]; more?: Col[]; todoOpen?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

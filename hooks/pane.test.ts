@@ -530,7 +530,7 @@ test('past week: the preview is read-only', async ($: any, on: any) => {
 const CFG = `${HOME}/Library/Application Support/Claude/config.json`
 const DARK = '#262b36'
 const LIGHT = '#ffffff'
-// The popup follows the Claude app's theme (config.json userThemeMode, else the OS) until the button picks one.
+// The pane follows the Claude app's theme (config.json userThemeMode, else the OS); it has no theme button of its own (WB-29).
 async function themed($: any, on: any, config: string | null, appearance = 'Light') {
   // `defaults read -g AppleInterfaceStyle`: prints Dark in Dark mode, fails in Light mode
   const run = (_$: any, e: any) => ({ value: e.argv[0] === 'defaults' ? { exitCode: appearance === 'Dark' ? 0 : 1, stdout: appearance === 'Dark' ? 'Dark\n' : '', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' } })
@@ -543,37 +543,20 @@ async function themed($: any, on: any, config: string | null, appearance = 'Ligh
   const bg = async () => (await byKey(ui, 'peek-pop')).props.backgroundColor
   return { ui, bg, files }
 }
-const themeLabel = async (ui: any) => (await ui.find({ key: 'theme' }))?.props.label
 for (const [mode, own, other] of [['light', LIGHT, DARK], ['dark', DARK, LIGHT]] as const) {
-  test(`theme follows the Claude app (${mode}); the button cycles auto, light, dark`, async ($: any, on: any) => {
+  test(`theme follows the Claude app (${mode}); no theme button`, async ($: any, on: any) => {
     const { ui, bg } = await themed($, on, JSON.stringify({ userThemeMode: mode }), mode === 'light' ? 'Dark' : 'Light') // the OS says the opposite: the app wins
     expect(await bg()).toBe(own)
     expect(JSON.stringify(await ui.drawn())).not.toContain(other)
-    expect(await themeLabel(ui)).toBe('跟随 Claude')
-    await ui.press({ key: 'theme' })
-    expect(await themeLabel(ui)).toBe('浅色')
-    expect(await bg()).toBe(LIGHT)
-    await ui.press({ key: 'theme' })
-    expect(await themeLabel(ui)).toBe('深色')
-    expect(await bg()).toBe(DARK)
-    await ui.press({ key: 'theme' })
-    expect(await themeLabel(ui)).toBe('跟随 Claude')
-    expect(await bg()).toBe(own)
+    expect(await ui.find({ key: 'theme' })).toBeUndefined()
     await ui.unmount()
   })
 }
 
-test('theme: system mode follows the OS appearance; a picked theme survives a restart', async ($: any, on: any) => {
+test('theme: system mode follows the OS appearance', async ($: any, on: any) => {
   const { ui, bg } = await themed($, on, JSON.stringify({ userThemeMode: 'system' }), 'Dark')
   expect(await bg()).toBe(DARK)
-  await ui.press({ key: 'theme' }) // light
-  expect(await bg()).toBe(LIGHT)
   await ui.unmount()
-  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true }) // the store keeps 'light'
-  const again = await $.ui.mount(PANE('desktop', 140))
-  await again.press({ key: 'open-SVC-1' })
-  expect((await byKey(again, 'peek-pop')).props.backgroundColor).toBe(LIGHT)
-  await again.unmount()
 })
 
 test('theme: a missing config.json falls back to the OS appearance', async ($: any, on: any) => {
@@ -901,17 +884,13 @@ test('done expanded: no Chinese in en, no rules, no emoji', async ($: any, on: a
   }
 })
 
-// The row tint (hover, the open inline preview) follows the theme.
+// The row tint (hover, the open inline preview) follows the app's theme.
 for (const [mode, own, other] of [['light', TINT.light, TINT.dark], ['dark', TINT.dark, TINT.light]] as const) {
   test(`row tint follows the theme (${mode})`, async ($: any, on: any) => {
     const ui = await striped($, on, 140, mode)
     const tree = async () => JSON.stringify(await ui.drawn())
     expect(await tree()).toContain(own)
     expect(await tree()).not.toContain(other)
-    await ui.press({ key: 'theme' }) // light
-    await ui.press({ key: 'theme' }) // dark
-    expect(await tree()).toContain(TINT.dark)
-    expect(await tree()).not.toContain(TINT.light)
     await ui.unmount()
   })
 }
@@ -924,7 +903,7 @@ for (const surface of ['desktop', 'mobile'] as const) {
     const buttons = async (prefix: string) => nodes(await ui.drawn(), n => n.type === 'Button' && String(n.props?.key).startsWith(prefix))
     expect((await buttons('p-')).map(b => b.props.key)).toEqual(['p-SVC', 'p-WB', 'p-INF', 'p-ME']) // ALL is the active tab at the start: a Text
     expect(nodes(await ui.drawn(), n => n.type === 'Box' && /^pj-/.test(n.props?.key ?? '')).map(n => n.props.key)).toEqual(['pj-ALL', 'pj-SVC', 'pj-WB', 'pj-INF', 'pj-ME'])
-    for (const k of ['p-', 'qf-', 'tab-', 'theme', 'lang', 'legend-', 'fold-', 'open-']) for (const b of await buttons(k)) {
+    for (const k of ['p-', 'qf-', 'tab-', 'lang', 'legend-', 'fold-', 'open-']) for (const b of await buttons(k)) {
       expect(b.props.plain).toBe(true)
       expect(b.props.variant).toBeUndefined()
     }
@@ -935,7 +914,7 @@ for (const surface of ['desktop', 'mobile'] as const) {
     expect(await underlined()).toEqual([['SVC 重写', true, '#1f2a44']])
     expect(await ui.find({ key: 'p-ALL' })).toBeDefined()
     // every key still works
-    for (const key of ['qf-me', 'qf-me', 'qf-live', 'qf-live', 'tab-feed', 'tab-board', 'p-ALL', 'theme', 'theme', 'theme', 'lang', 'lang']) await ui.press({ key })
+    for (const key of ['qf-me', 'qf-me', 'qf-live', 'qf-live', 'tab-feed', 'tab-board', 'p-ALL', 'lang', 'lang']) await ui.press({ key })
     expect(await ui.find({ type: 'Link' })).toBeDefined()
     expect(Boolean(await ui.find({ key: 'search' }))).toBe(surface !== 'mobile') // mobile has no Input
     await ui.press({ key: 'qf-me' }) // only tickets waiting on me: ME-1 (decide) stays, SVC-1 goes

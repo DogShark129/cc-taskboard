@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, Col, Lang, Priority, Resolved, Sess, Theme, Ticket, View } from '../types'
+import type { Board, Col, Lang, Priority, Resolved, Sess, Ticket, View } from '../types'
 import {
   BAD, BORDER, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
   LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
@@ -34,8 +34,8 @@ const WEB_LINK = 'http://localhost:4790/'
 // Current UI language: session.start loads it from the store, the EN / 中文 button flips it.
 let lang: Lang = 'zh'
 const t = (key: K, ...args: (string | number)[]) => tl(lang, key, ...args)
-// Current theme setting: auto follows the Claude app (its config.json, else the OS); light / dark are fixed. The surface colors and the preview popup follow it.
-let theme: Theme = 'auto'
+// The pane always follows the Claude app's theme (its config.json, else the OS): the app draws the pane background and every Button label
+// in its own theme, so a theme of the plugin's own would put light text on a light tint (WB-29). The web UI keeps its own switch.
 let resolved: Resolved = 'light'
 const PALETTE: Record<Resolved, { bg: string; fg: string; border: string; mute: string }> = {
   dark: { bg: '#262b36', fg: '#dde2ea', border: '#4a5263', mute: '#8b93a3' },
@@ -181,21 +181,16 @@ async function readAppTheme($: $) {
     appDark = r?.exitCode === 0 && r.stdout.includes('Dark')
   }
 }
-async function applyTheme($: $, next: Theme = theme) {
-  theme = next
-  resolved = theme === 'auto' ? resolveTheme(appMode, appDark) : theme
-  await update($, view, cur => ({ ...cur, theme, themeResolved: resolved }))
-}
-async function setTheme($: $, next: Theme) {
-  await $.store.set('theme', next)
-  await applyTheme($, next)
+async function applyTheme($: $) {
+  resolved = resolveTheme(appMode, appDark)
+  await update($, view, cur => ({ ...cur, themeResolved: resolved }))
 }
 // From the 5 s timer: cheap unless 30 s passed; redraws only when the resolved theme changed.
 async function checkTheme($: $) {
   if (Date.now() - themeAt < 30_000) return
   const before = resolved
   await readAppTheme($)
-  if (theme === 'auto' && resolveTheme(appMode, appDark) !== before) await applyTheme($)
+  if (resolveTheme(appMode, appDark) !== before) await applyTheme($)
 }
 
 function saveSess($: $) {
@@ -409,8 +404,6 @@ export const register: Register = on => {
     await resolvePaths($)
     sid = await $.session.id()
     lang = (await $.store.get('lang')) === 'en' ? 'en' : 'zh'
-    const stored = await $.store.get('theme')
-    theme = stored === 'light' || stored === 'dark' ? stored : 'auto'
     await readAppTheme($)
     await applyTheme($)
     await update($, view, cur => ({ ...cur, lang }))
@@ -987,7 +980,6 @@ export const register: Register = on => {
         <Box justifyContent="space-between" gap={1}>
           <Box flexShrink={1}>{title}</Box>
           <Box gap={2} flexShrink={0}>
-            <Button key="theme" plain label={t(`theme.${theme}` as K)} onPress={() => setTheme($, theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto')} />
             <Button key="lang" plain label={t('lang.btn')} onPress={() => setLang($, lang === 'zh' ? 'en' : 'zh')} />
           </Box>
         </Box>
