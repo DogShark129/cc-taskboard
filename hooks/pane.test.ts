@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { CARD_H, GRID_CARD_W, HEAD_H, cardHeight, cardRows, columnLayout, gridLayout, peekGeo, peekRect } from './board-client'
+import { CARD_H, GRID_CARD_W, HEAD_H, boardHeight, cardHeight, cardRows, columnLayout, dropBarY, gridLayout, peekGeo, peekRect, proposeHits } from './board-client'
 // A card with a short title: the board heights below are made of these (2 rows: 1 title row, meta) unless a test says otherwise.
 const SHORT = cardHeight({}, 20)
 import { LEGACY_DATA_DIR, colOf, weekStartOf } from './core.ts'
@@ -285,6 +285,7 @@ test('en mode shows no Chinese UI text', async ($: any, on: any) => {
   const call = (x: any) => $.tool.call({ tool: 'mcp__cc-taskboard__ticket', ...x })
   await call({ action: 'create', title: '[T-42] 登录页面', title_en: '[T-42] login page', priority: 'P1', desc: '去掉标记', desc_en: 'drop the marker', comment: 'migration ran' })
   await call({ action: 'create', title: '周看板插件', title_en: 'task board mod', project: 'ME', col: 'decide', src: 'me', note: 'plan.md' })
+  await call({ action: 'update', key: 'ME-1', col: 'canceled', comment: 'not needed' }) // a proposal: its card carries the two words (WB-28)
   await call({ action: 'update', key: 'SVC-1', col: 'review' })
   // the activity also carries a commit
   await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
@@ -672,7 +673,7 @@ test('labels, due, blockedBy, parent, canceled: tool validation, list, cards, de
   expect(await ui.find({ type: 'Text', text: '已取消', in: 'board-SVC' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: '卡于 SVC-1', in: 'board-SVC' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '#缺陷 #hold', in: 'board-SVC' })).toBeDefined()
-  await call({ action: 'update', key: 'SVC-1', col: 'canceled' })
+  await call({ action: 'update', key: 'SVC-1', col: 'canceled', userAccepted: true }) // the person said so in chat (WB-28)
   expect(await ui.find({ type: 'Text', text: '已取消', in: 'board-SVC' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /卡于/, in: 'board-SVC' })).toBeUndefined() // a canceled blocker no longer blocks
   expect(await call({ action: 'list' })).not.toContain('SVC-1 ')
@@ -681,7 +682,9 @@ test('labels, due, blockedBy, parent, canceled: tool validation, list, cards, de
 
   // narrow detail: relations both ways, overdue, panel edits
   const nu = await $.ui.mount(PANE('desktop', 60))
-  const svcAt = gridLayout([{ id: 'todo', cards: [{ key: 'SVC-2' }] }, { id: 'canceled', cards: [{ key: 'SVC-1' }] }], 56).sections[1].cards[0] // canceled comes after todo
+  const lay = gridLayout([{ id: 'todo', cards: [{ key: 'SVC-2' }] }, { id: 'canceled', cards: [{ key: 'SVC-1' }] }], 56)
+  const svcAt = lay.sections[1].cards[0] // canceled comes after todo
+  await click(nu, 55, lay.sections[1].y) // canceled is folded like done: open it first (WB-28)
   await click(nu, svcAt.x + 2, svcAt.y + 1)
   await click(nu, btnAt(60, '打开详情', 15).x, btnAt(60, '打开详情', 15).y)
   expect(await nu.find({ key: 'rel-blocks-SVC-2' })).toBeDefined()
@@ -787,6 +790,7 @@ test('zh mode shows no English UI text', async ($: any, on: any) => {
   const call = (x: any) => $.tool.call({ tool: 'mcp__cc-taskboard__ticket', ...x })
   await call({ action: 'create', title: '[T-42] 登录页面', title_en: '[T-42] login page', priority: 'P1', desc: '去掉标记', desc_en: 'drop the marker', comment: '迁移已跑', labels: ['缺陷'], due: '2099-01-01' })
   await call({ action: 'create', title: '周看板插件', title_en: 'task board mod', project: 'ME', col: 'decide', src: 'me', note: '计划' })
+  await call({ action: 'update', key: 'ME-1', col: 'canceled', comment: '不需要了' }) // a proposal (WB-28)
   await call({ action: 'update', key: 'SVC-1', col: 'review', blockedBy: ['ME-1'] })
   for (const [cols, scopes] of [[140, ['header', 'board-SVC', 'board-ME']], [60, ['header', 'board-SVC', 'board-ME']]] as const) {
     const ui = await $.ui.mount(PANE('desktop', cols))
@@ -1399,5 +1403,145 @@ test('the header Client on desktop draws Links the page accepts', async ($: any,
   walk(await ui.drawn({ in: 'header' }))
   expect(links.length).toBeGreaterThan(0)
   for (const l of links) expect(l.href).toBe(new URL(l.href).href)
+  await ui.unmount()
+})
+
+// WB-28: canceling is the person's call. Claude only proposes (decide + a reason); the person confirms or keeps it on the board,
+// cancels any ticket, and restores a canceled one to where it was.
+// The board Client's own props, and a click on one of the popup's act buttons (after 打开详情) by its label.
+const boardOf = async (ui: any, lane = 'board-SVC') => (await ui.find({ key: lane })).props
+const actBtn = async (ui: any, label: string, lane = 'board-SVC') => {
+  const c = await boardOf(ui, lane)
+  const p = c.props
+  const g = peekGeo(c.width, boardHeight(p.cols, p.colW, p.grid), p.peek.open, p.grid ? 2 : 4, p.peek.acts.map((a: any) => a.label))
+  const i = p.peek.acts.findIndex((a: any) => a.label === label)
+  if (i < 0) throw new Error(`no act ${label}`)
+  await click(ui, g.left + g.acts[i].x0 + 1, g.top + g.btn.y, lane)
+}
+
+test('WB-28: Claude cancel lands in decide with a reason; the person keeps, confirms, cancels, restores; userAccepted passes', async ($: any, on: any) => {
+  on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
+  const files: any = memfs(on)
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+  const call = async (x: any) => String((await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', ...x })).result)
+  const log = () => files.get(LOG) as string
+  await call({ action: 'create', title: 'A', col: 'follow' }) // SVC-1
+  await call({ action: 'create', title: 'B', col: 'todo' }) // SVC-2
+  // no reason: refused, nothing moves
+  expect(await call({ action: 'update', key: 'SVC-1', col: 'canceled' })).toContain('没改')
+  expect(log()).not.toContain('"col":"decide"')
+  // with one: a proposal in 等我拍板, never canceled
+  expect(await call({ action: 'update', key: 'SVC-1', col: 'canceled', comment: '需求撤了' })).toContain('已提议取消，等用户在看板确认')
+  expect(log()).toContain('"key":"SVC-1","col":"decide","text":"Claude 建议取消"')
+  expect(log()).toContain('"proposeCancel":{"reason":"需求撤了","from":"follow"}')
+  expect(log()).not.toContain('"col":"canceled"')
+
+  // wide board: the proposed card's meta row carries 确认取消 / 保留; 保留 sends it back to 待跟进
+  const ui = await $.ui.mount(PANE('desktop', 140))
+  const [ok, keep] = proposeHits({ x: 0, y: HEAD_H, h: SHORT }, '确认取消', '保留') // SVC-1 is 等我拍板's only card
+  expect([ok.x0, ok.y, keep.x0]).toEqual([2, HEAD_H + SHORT - 1, 11]) // after the ▎ and 1 cell of padding, on the card's last (meta) row
+  expect(await ui.find({ type: 'Text', text: '确认取消', in: 'board-SVC' })).toBeDefined()
+  await click(ui, keep.x0, keep.y)
+  expect(log()).toContain('"key":"SVC-1","col":"follow","text":"你保留"')
+  expect(await ui.find({ type: 'Text', text: '确认取消', in: 'board-SVC' })).toBeUndefined() // the move cleared the proposal
+  // proposed again (note as the reason); 确认取消 cancels with Claude's reason
+  await call({ action: 'update', key: 'SVC-1', col: 'canceled', note: '重复了' })
+  await click(ui, ok.x0 + 1, ok.y)
+  expect(log()).toContain('"key":"SVC-1","col":"canceled","by":"me","text":"重复了"')
+  // canceled folds like done: header and count, no card until expanded
+  expect(await ui.find({ type: 'Text', text: '已取消', in: 'board-SVC' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'A', in: 'board-SVC' })).toBeUndefined()
+  const colW = (await boardOf(ui)).props.colW
+  await click(ui, 6 * (colW + 1) + colW - 2, 0) // the toggle on 已取消's header row
+  expect(await ui.find({ type: 'Text', text: 'A', in: 'board-SVC' })).toBeDefined()
+  // its popup: 恢复 sends it back to the column it left before the proposal
+  await click(ui, 6 * (colW + 1) + 3, 3)
+  await actBtn(ui, '恢复')
+  expect(log()).toContain('"key":"SVC-1","col":"follow","text":"你恢复"')
+  // the feed says who canceled what, and why
+  await hdr(ui, 'seg', 'feed')
+  expect(await ui.find({ type: 'Text', text: /你取消了「A」：重复了/ })).toBeDefined()
+  await hdr(ui, 'seg', 'board')
+  // any ticket: the popup's 取消工单 (no reason), then the detail's reason box, then 恢复
+  await click(ui, 1 * (Math.floor((140 - 4) / 6) + 1) + 3, 3) // SVC-2 in 待开工
+  await actBtn(ui, '取消工单')
+  expect(log()).toContain('"key":"SVC-2","col":"canceled","by":"me","text":""')
+  await actBtn(ui, '恢复') // the popup stays open on the ticket's new state
+  const restored = () => log().split('\n').filter(l => l.includes('"key":"SVC-2","col":"todo","text":"你恢复"')).length
+  expect(restored()).toBe(1)
+  await openBtn(ui, 140)
+  await ui.input({ key: 'cancel-reason', text: ' 不做了 ' })
+  expect(log()).toContain('"key":"SVC-2","col":"canceled","by":"me","text":"不做了"')
+  await ui.press({ key: 'restore' })
+  expect(restored()).toBe(2)
+  await expectNoEmoji(ui)
+  await ui.unmount()
+
+  // the person said so in chat: userAccepted cancels at once, with the reason
+  expect(await call({ action: 'update', key: 'SVC-2', col: 'canceled', userAccepted: true, comment: '用户说不做了' })).not.toContain('已提议取消')
+  expect(log()).toContain('"key":"SVC-2","col":"canceled","by":"me","text":"用户说不做了"')
+})
+
+test('WB-28: the detail and the narrow grid confirm / keep a proposal', async ($: any, on: any) => {
+  on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
+  const files: any = memfs(on)
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+  const call = (x: any) => $.tool.call({ tool: 'mcp__cc-taskboard__ticket', ...x })
+  await call({ action: 'create', title: 'A', col: 'doing' }) // SVC-1
+  await call({ action: 'update', key: 'SVC-1', col: 'canceled', comment: 'dup' })
+  const ui = await $.ui.mount(PANE('desktop', 60))
+  // grid: SVC-1 is the only card, in the 等我拍板 section
+  const c = gridLayout([{ id: 'decide', cards: [{ key: 'SVC-1' }] }], 56).sections[0].cards[0]
+  const [, keep] = proposeHits(c, '确认取消', '保留')
+  await click(ui, keep.x0, keep.y)
+  expect(files.get(LOG)).toContain('"key":"SVC-1","col":"doing","text":"你保留"')
+  await call({ action: 'update', key: 'SVC-1', col: 'canceled', comment: 'dup' })
+  await click(ui, 3, c.y) // the title row: the meta row's left side is the two words
+  await openBtn(ui, 60)
+  expect(await ui.find({ type: 'Text', text: /Claude 建议取消：dup/ })).toBeDefined()
+  await ui.press({ key: 'confirm-cancel' })
+  expect(files.get(LOG)).toContain('"key":"SVC-1","col":"canceled","by":"me","text":"dup"')
+  expect(await ui.find({ key: 'restore' })).toBeDefined()
+  await ui.unmount()
+})
+
+for (const cols of [140, 60]) {
+  test(`WB-28: while a card is dragged a row without cards is a drop bar for 已取消 (${cols})`, async ($: any, on: any) => {
+    on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
+    const files: any = memfs(on)
+    await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+    await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'create', title: 'A', col: 'follow' }) // SVC-1
+    const ui = await $.ui.mount(PANE('desktop', cols))
+    const p = (await boardOf(ui)).props
+    const bar = dropBarY(p.grid)
+    const x = cols > 100 ? 3 * (p.colW + 1) + 3 : 3 // 待跟进, or the grid's only card
+    expect(await ui.find({ type: 'Text', text: / 放到 已取消 /, in: 'board-SVC' })).toBeUndefined() // only while dragging
+    await ui.pointer({ type: 'down', x, y: 2, button: 'left', in: 'board-SVC' })
+    await ui.pointer({ type: 'move', x, y: bar, button: 'left', in: 'board-SVC' })
+    expect(await ui.find({ type: 'Text', text: / 放到 已取消 /, in: 'board-SVC' })).toBeDefined()
+    await ui.pointer({ type: 'up', x, y: bar, button: 'left', in: 'board-SVC' })
+    expect(files.get(LOG)).toContain('"key":"SVC-1","col":"canceled","by":"me","text":""')
+    await ui.unmount()
+  })
+}
+
+test('WB-28: a search finds canceled tickets archived in earlier weeks, and 恢复 brings one back', async ($: any, on: any) => {
+  on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
+  const files: any = memfs(on)
+  const t = weekStartOf(Date.now()) - 10 * 86_400_000
+  files.set(`${DATA}/events/old.jsonl`, [
+    { t, sid: 'old', k: 'create', key: 'SVC-1', project: 'SVC', title: '旧需求', col: 'doing', src: 'me' },
+    { t: t + 1, sid: 'old', k: 'move', key: 'SVC-1', col: 'canceled', by: 'me', text: '没人要' },
+  ].map(e => JSON.stringify(e)).join('\n') + '\n')
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(PANE('desktop', 140))
+  expect(await ui.find({ key: 'board-SVC' })).toBeUndefined() // archived: off the board
+  await hdr(ui, 'search')
+  for (const key of 'SVC-1') await ui.key({ key, in: 'header' })
+  expect(await ui.find({ type: 'Text', text: '旧需求', in: 'board-SVC' })).toBeDefined() // the search opens 已取消
+  const colW = (await boardOf(ui)).props.colW
+  await click(ui, 6 * (colW + 1) + 3, 3)
+  await actBtn(ui, '恢复')
+  expect(files.get(LOG)).toContain('"key":"SVC-1","col":"doing","text":"你恢复"')
   await ui.unmount()
 })

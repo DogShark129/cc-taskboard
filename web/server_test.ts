@@ -226,3 +226,39 @@ Deno.test('data dir: <home>/.claude/cc-taskboard, the legacy dir while only that
     await Deno.remove(home, { recursive: true })
   }
 })
+
+// WB-28: cancel (with a reason), confirm / keep Claude's proposal, restore; a move into canceled is the person's cancel too.
+Deno.test('cancel, confirm, keep, restore; archived canceled tickets come along for the search', () => withServer(null, async ({ data, post, board }) => {
+  const send = async (b: unknown, status = 200) => { const r = await post(b); const j = await r.json(); assertEquals(r.status, status, JSON.stringify(j)); return j }
+  const t = Date.now()
+  const old = t - 10 * 86_400_000
+  await Deno.writeTextFile(`${data}/events/s2.jsonl`, [
+    { t: old, sid: 's2', k: 'create', key: 'SVC-9', project: 'SVC', title: 'old', col: 'doing' },
+    { t: old + 1, sid: 's2', k: 'move', key: 'SVC-9', col: 'canceled', by: 'me', text: '' },
+    { t: t - 2, sid: 's2', k: 'move', key: 'WB-3', col: 'decide', text: 'Claude 建议取消' },
+    { t: t - 1, sid: 's2', k: 'meta', key: 'WB-3', meta: { proposeCancel: { reason: 'dup', from: 'todo' } } },
+  ].map(e => JSON.stringify(e)).join('\n') + '\n')
+  const tk = async (key: string) => (await board()).board.tickets.find((x: any) => x.key === key)
+  assertEquals((await tk('WB-3')).proposeCancel, { reason: 'dup', from: 'todo' })
+  await send({ type: 'keep', key: 'WB-3' })
+  assertEquals([(await tk('WB-3')).col, (await tk('WB-3')).proposeCancel], ['todo', undefined])
+  await send({ type: 'keep', key: 'WB-3' }, 400) // nothing proposed any more
+  await send({ type: 'cancel', key: 'SVC-1', text: ' 不要了 ' })
+  const last = (await lines(data)).at(-1)
+  assertEquals([last.k, last.col, last.by, last.text], ['move', 'canceled', 'me', '不要了'])
+  assertEquals((await board()).board.feed[0].text, '你取消了「[T-42] 登录页面」：不要了')
+  await send({ type: 'restore', key: 'SVC-1' })
+  assertEquals(colOf(await board(), 'SVC-1'), 'doing')
+  await send({ type: 'restore', key: 'SVC-1' }, 400) // not canceled
+  await send({ type: 'move', key: 'SVC-1', col: 'canceled' })
+  assertEquals([(await lines(data)).at(-1).by, colOf(await board(), 'SVC-1')], ['me', 'canceled'])
+  // archived: off the board, in `archived` for the page's search
+  const d = await board()
+  assertEquals([colOf(d, 'SVC-9'), d.archived.map((x: any) => x.key)], [undefined, ['SVC-9']])
+  assertEquals((await board('?week=1')).archived, [])
+}))
+
+Deno.test('index.html: cancel / confirm / keep / restore buttons post their own types', async () => {
+  const html = await Deno.readTextFile(new URL('./index.html', import.meta.url))
+  for (const s of ["b('confirm', 'cancel.ok'", "b('keep', 'cancel.keep')", "b('restore', 'restore')", "b('cancel', 'cancel')", "run({ type: 'cancel', key: d.key, text: why })", 'drop-only']) assertStringIncludes(html, s)
+})

@@ -72,6 +72,8 @@ export const ZH = {
   'crumb': '项目', 'board.title': '{0} 看板', 'left': '剩 {0} 天', 'qf.me': '只看等我的', 'qf.live': '正在做的', 'search.ph': '搜索编号或标题', 'empty.filter': '没有符合筛选的工单。',
   'status': '状态', 'none': '无', 'details': '详情', 'd.src': '来源', 'd.stay': '停留', 'd.commits': '提交', 'd.branch': '分支',
   'review.wait': '待你验收', 'accept': '验收通过', 'reject': '打回',
+  'cancel': '取消工单', 'cancel.ph': '取消理由（选填），回车即取消工单', 'cancel.ask': 'Claude 建议取消：{0}', 'cancel.ok': '确认取消', 'cancel.keep': '保留', 'restore': '恢复', 'd.propose': '建议取消',
+  'fold.cancel': '你取消了「{0}」', 'fold.cancel.why': '你取消了「{0}」：{1}',
   'desc': '描述', 'desc.none': '还没有描述', 'desc.ph': '写或改描述，回车保存',
   'sessions': '关联会话', 'ss.gone': '已结束', 'ss.run': '忙', 'ss.idle': '空闲', 'this.session': ' · 本会话', 'jump': '切过去', 'sessions.none': '还没有会话做过这张票',
   'hand': '交给 Claude：', 'spawn': '开新会话做', 'go.here': '在本会话继续', 'ask.owner': '问 {0} 进度', 'verify': '核对实际状态',
@@ -114,6 +116,8 @@ export const I18N: Record<Lang, typeof ZH> = {
     'crumb': 'Projects', 'board.title': '{0} board', 'left': '{0} d left', 'qf.me': 'Waiting on me', 'qf.live': 'Live only', 'search.ph': 'Search key or title', 'empty.filter': 'No tickets match the filter.',
     'status': 'Status', 'none': 'None', 'details': 'Details', 'd.src': 'Source', 'd.stay': 'Stayed', 'd.commits': 'Commits', 'd.branch': 'Branch',
     'review.wait': 'Awaiting your review', 'accept': 'Accept', 'reject': 'Send back',
+    'cancel': 'Cancel ticket', 'cancel.ph': 'Reason (optional), Enter cancels the ticket', 'cancel.ask': 'Claude proposes to cancel: {0}', 'cancel.ok': 'Cancel it', 'cancel.keep': 'Keep', 'restore': 'Restore', 'd.propose': 'Cancel?',
+    'fold.cancel': 'You canceled "{0}"', 'fold.cancel.why': 'You canceled "{0}": {1}',
     'desc': 'Description', 'desc.none': 'No description yet', 'desc.ph': 'Write or edit the description, Enter to save',
     'sessions': 'Linked sessions', 'ss.gone': 'Ended', 'ss.run': 'Busy', 'ss.idle': 'Idle', 'this.session': ' · this session', 'jump': 'Switch to it', 'sessions.none': 'No session has worked on this ticket yet',
     'hand': 'Hand to Claude:', 'spawn': 'Do in a new session', 'go.here': 'Continue in this session', 'ask.owner': 'Ask {0} for progress', 'verify': 'Verify actual state',
@@ -136,6 +140,7 @@ export const REASON_EN: Record<string, string> = {
   '你拖拽移动': 'dragged by you', '你手动移动': 'moved by you', 'Claude 更新': 'updated by Claude', '认领': 'claimed', '开始改代码': 'started editing',
   'Claude 提问': 'Claude asked', '已回复': 'answered', 'PR 合并，待你验收': 'PR merged, awaiting your review', '你验收通过': 'accepted by you',
   '你打回': 'sent back by you', '你验收': 'accepted by you', '你在对话中验收': 'accepted by you in chat', '不做了': 'dropped', '初始化导入': 'imported at setup', 'PR 合并': 'PR merged',
+  'Claude 建议取消': 'Claude proposes to cancel', '你保留': 'kept by you', '你恢复': 'restored by you',
 }
 // Imported Obsidian moves read 「W39 存档」.
 const reasonOf = (l: Lang, text: string) => (l === 'en' ? REASON_EN[text] ?? text.replace(/^(W\d+) 存档$/, '$1 archived') : text)
@@ -195,8 +200,14 @@ export type Ev = {
   src?: 'claude' | 'me'
   text?: string
   by?: 'claude' | 'me'
-  meta?: { desc?: string; desc_en?: string; priority?: Priority; branch?: string; worktree?: string; labels?: string[]; due?: string; blockedBy?: string[]; parent?: string }
+  meta?: { desc?: string; desc_en?: string; priority?: Priority; branch?: string; worktree?: string; labels?: string[]; due?: string; blockedBy?: string[]; parent?: string; proposeCancel?: Ticket['proposeCancel'] }
 }
+
+// WB-28: only the person cancels. Their cancel is a move by 'me' whose text is the reason (may be empty);
+// 保留 sends a ticket Claude proposed to cancel back where it was, 恢复 brings a canceled one back (both: else todo).
+export const cancelEv = (key: string, reason = ''): Omit<Ev, 't' | 'sid'> => ({ k: 'move', key, col: 'canceled', by: 'me', text: reason.trim() })
+export const keepTo = (tk: Ticket): Col => tk.proposeCancel?.from ?? 'todo'
+export const restoreTo = (tk: Ticket): Col => tk.canceledFrom ?? 'todo'
 
 export const colOf = (id: string) => COLS.find(c => c.id === id) ?? COLS[1]
 export const projOf = (id: string | null) => PROJECTS.find(p => p.id === id)
@@ -262,9 +273,15 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
     let icon = '' as FeedItem['icon']
     if (ev.k === 'create') { line = tl(l, 'fold.create', titleOf(tk, l), tl(l, `col.${tk.col}` as K)); icon = 'new' }
     if (ev.k === 'move' && ev.col && ev.col !== tk.col) {
+      // Where 恢复 goes: the column before the cancel, or before Claude's proposal when the person confirmed one.
+      if (ev.col === 'canceled') tk.canceledFrom = tk.proposeCancel ? tk.proposeCancel.from : tk.col
+      // Any move settles a proposal: confirmed, kept, or dragged elsewhere.
+      delete tk.proposeCancel
       tk.col = ev.col
       tk.since = ev.t
-      line = tl(l, 'fold.move', tl(l, `col.${ev.col}` as K)) + (ev.text ? tl(l, 'fold.reason', reasonOf(l, ev.text)) : '')
+      line = ev.col === 'canceled' && ev.by === 'me'
+        ? tl(l, ev.text ? 'fold.cancel.why' : 'fold.cancel', titleOf(tk, l), ev.text ?? '')
+        : tl(l, 'fold.move', tl(l, `col.${ev.col}` as K)) + (ev.text ? tl(l, 'fold.reason', reasonOf(l, ev.text)) : '')
       icon = 'move'
     }
     if (ev.k === 'title') { if (ev.title) tk.title = ev.title; if (ev.title_en) tk.title_en = ev.title_en }
@@ -312,6 +329,10 @@ export function fold(evs: Ev[], sessions: Sess[], now: number, l: Lang = 'zh'): 
     createdThisWeek,
   }
 }
+
+// Canceled tickets archived off the board in earlier weeks: a search reaches them (WB-28).
+export const archivedCanceled = (evs: Ev[], b: Board, l: Lang = 'zh') =>
+  fold(evs, [], 0, l).tickets.filter(t => t.col === 'canceled' && !b.tickets.some(x => x.key === t.key))
 
 // The board as it stood at the end of the week `offset` weeks back (0 = now): past weeks replay the logs up to that week's end.
 export function boardForWeek(evs: Ev[], now: number, offset: number, l: Lang = 'zh'): { board: Board; asOf: number } {

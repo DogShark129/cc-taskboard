@@ -29,6 +29,10 @@ export type Ticket = {
   // Relations, by canonical key: tickets this one waits on, and its parent ('' = none). The reverse sides are derived.
   blockedBy?: string[]
   parent?: string
+  // WB-28: Claude asked to cancel it (it waits in decide; from = the column it came from), until the person confirms or keeps it.
+  proposeCancel?: { reason: string; from?: Col }
+  // Derived by fold from the log: the column it was in before its last cancel, where 恢复 sends it.
+  canceledFrom?: Col
   sids: string[]
   log: { t: number; sid: string; text: string }[]
 }
@@ -72,6 +76,8 @@ export type CardProps = {
   live: boolean; done: boolean; age: number | null; ageColor: string; pr: string
   priority: string; priorityColor: string; comments: number
   labels: string; due: string; dueColor: string; blocked: string
+  // Claude proposed to cancel it: the meta row carries 确认取消 / 保留 (WB-28).
+  propose?: boolean
 }
 // The Jira-style preview popup: everything it shows, localized and cleaned by the hooks module.
 export type PeekProps = {
@@ -84,6 +90,8 @@ export type PeekProps = {
   footer: string; open: string; hint: string
   // The comment box under the comments: its placeholder and what Enter does.
   commentPh: string; send: string
+  // Buttons after the open button on the same row (WB-28): cancel, or confirm / keep a proposal, or restore.
+  acts: { id: 'cancel' | 'confirm' | 'keep' | 'restore'; label: string }[]
   bg: string; fg: string; border: string; mute: string
 }
 export type BoardProps = {
@@ -91,10 +99,12 @@ export type BoardProps = {
   // Grid mode (the narrow pane): the region width. Unset = the wide board, colW per column.
   grid?: number
   peek?: PeekProps
-  labels: { dropTo: string; comments: string; days: string; blocked: string; live: string }
+  labels: { dropTo: string; comments: string; days: string; blocked: string; live: string; cancelOk: string; keep: string }
+  // The canceled column when the board has none: drawn as a drop bar only while a card is dragged (WB-28).
+  dropCancel?: { name: string; color: string }
   // Surface colors for the user's theme (the Client cannot read the view).
   surf: { tint: string; text: string; sub: string; mute: string; accent: string; live: string }
-  // count = every ticket of the column; cards = the ones drawn (none while done is folded); toggle = the done column's expand / collapse word.
+  // count = every ticket of the column; cards = the ones drawn (none while done / canceled is folded); toggle = their expand / collapse word.
   cols: { id: Col; name: string; color: string; count: number; toggle?: string; cards: CardProps[] }[]
 }
 // The pane header drawn by its own Client (WB-23): every string localized, every color resolved by the hooks module.
@@ -117,7 +127,7 @@ export type DragState = { drag: string | null; from: number; over: number; pd?: 
 // auto = follow the Claude app; Resolved is what auto turns into.
 export type Resolved = 'light' | 'dark'
 export type Theme = 'auto' | Resolved
-export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; collapsed?: string[]; lang?: Lang; theme?: Theme; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; doneOpen?: boolean }
+export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; collapsed?: string[]; lang?: Lang; theme?: Theme; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

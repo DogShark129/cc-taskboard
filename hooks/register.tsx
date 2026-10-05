@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, BoardProps, Col, HeaderProps, Lang, PeekProps, Priority, Resolved, Sess, Theme, Ticket, View } from '../types'
 import {
   BAD, BORDER, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
-  LIVE_MS, ago, boardForWeek, clean, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
+  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, clean, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
 import type { Ev, InitPlan, K, ScanRow } from './core.ts'
 import { HEAD_H, boardHeight, clip, peekRect } from './board-client.tsx'
@@ -285,6 +285,17 @@ async function setState($: $, state: Sess['state']) {
 async function move($: $, key: string, col: Col, why: string) {
   await emit($, { k: 'move', key, col, text: why })
 }
+// Only the person cancels (WB-28): a drag or status pick into 已取消, the 取消工单 button, a confirmed proposal; the reason may be empty.
+const cancel = ($: $, key: string, reason = '') => emit($, cancelEv(key, reason))
+// The person's buttons on a ticket: cancel (with an optional reason), confirm / keep Claude's proposal, restore a canceled one.
+async function ticketAct($: $, act: string, key: string, reason = '') {
+  await loadAll($)
+  const tk = findTicket(fold(all, [], 0).tickets, key)
+  if (!tk) return
+  if ((act === 'cancel' || act === 'confirm') && tk.col !== 'canceled') await cancel($, tk.key, act === 'confirm' ? tk.proposeCancel?.reason : reason)
+  if (act === 'keep' && tk.proposeCancel) await move($, tk.key, keepTo(tk), '你保留')
+  if (act === 'restore' && tk.col === 'canceled') await move($, tk.key, restoreTo(tk), '你恢复')
+}
 
 // Has this session's Claude prepare a new session for a ticket: spawn_task leaves a chip the person clicks to enter, or ignores.
 const spawnPrompt = (tk: Ticket) =>
@@ -315,6 +326,7 @@ async function spawnForWebStarts($: $, b: Board) {
 }
 
 async function personMove($: $, key: string, col: Col, why: string) {
+  if (col === 'canceled') return ticketAct($, 'cancel', key)
   await loadAll($)
   const tk = findTicket(fold(all, [], Date.now()).tickets, key)
   await move($, key, col, why)
@@ -443,6 +455,7 @@ export const register: Register = on => {
         '用户在对话里说「加到看板 / 记个 ticket」时 action:"create" 并带 src:"me"。',
         '状态（col）：decide 等用户拍板、todo 待开工、doing 进行中、follow 等别人（PR 评审、对方回复）、review 待审核、done 已完成、canceled 已取消（决定不做了）。',
         '做完一张票就移到 review（待审核）；done 只能由用户验收，你传 done 也会落到 review。',
+        '取消也只能由用户决定：你传 canceled 会落到 decide（等我拍板）并标成「建议取消」，必须同时用 comment（或 note）写理由，用户在看板上确认取消或保留；用户在对话里明确说验收 / 取消时才带 userAccepted:true 直接生效。',
         '可写 desc（Markdown 描述）、priority（P0 最急 ~ P3）、comment（一条评论，用户在看板上看得到）。',
         '标题和描述是双语的：title / desc 写中文，title_en / desc_en 写英文。create 时、以及 update 改标题或描述时，两种语言必须同时给；用户用英文写的，你补中文进 title / desc。评论、要点不用翻译。',
         'labels 标签（如 缺陷 / 特性 / hold，整组替换）；due 截止日期 YYYY-MM-DD；blockedBy 被哪些 ticket 卡着（整组替换，卡点完成或取消后自动不再算阻塞）；parent 父 ticket（拆子任务时用）。传 "" 或 [] 清除。',
@@ -463,7 +476,7 @@ export const register: Register = on => {
           desc_en: { type: 'string', description: '英文 Markdown 描述，和 desc 同时给，整段替换' },
           priority: { type: 'string', enum: PRIORITIES },
           comment: { type: 'string', description: '一条评论，追加' },
-          userAccepted: { type: 'boolean', description: '仅当用户在对话里明确说这张票验收通过时为 true：允许 col:done' },
+          userAccepted: { type: 'boolean', description: '仅当用户在对话里明确说这张票验收通过（允许 col:done）或明确说取消（允许 col:canceled）时为 true' },
           work: { type: 'boolean', description: 'true = 本 session 现在在做这张票' },
           src: { type: 'string', enum: ['claude', 'me'], description: 'me = 用户明确要求加的' },
           project: { type: 'string', description: '当前目录未归属项目时必填（board 编号前缀，如 APP）；问用户后再填' },
@@ -503,7 +516,7 @@ export const register: Register = on => {
     ]
     await loadAll($)
     const mineKeys = new Set(fold(all, [], Date.now()).tickets.filter(t => t.sids.includes(sid)).map(t => t.key))
-    const moved = all.filter(x => x.k === 'move' && x.t > lastBrief && x.text?.startsWith('你') && mineKeys.has(x.key))
+    const moved = all.filter(x => x.k === 'move' && x.t > lastBrief && (x.by === 'me' || x.text?.startsWith('你')) && mineKeys.has(x.key))
     if (moved.length) lines.push(`用户刚在看板上调整了本 session 做过的 ticket：${moved.map(x => `${x.key} → ${colOf(x.col ?? 'todo').name}（${hhmm(x.t)}）`).join('；')}。按这个调整接下来的工作。`)
     const said = all.filter(x => x.k === 'comment' && x.by === 'me' && x.t > lastBrief && mineKeys.has(x.key))
     if (said.length) lines.push(`用户在看板上给本 session 做过的 ticket 留了评论：${said.map(x => `${x.key}：${x.text}`).join('；')}。`)
@@ -585,10 +598,14 @@ export const register: Register = on => {
       desc?: string; desc_en?: string; priority?: Priority; comment?: string; userAccepted?: boolean
       labels?: string[]; due?: string; blockedBy?: string[]; parent?: string
     }
-    // Only the person accepts into done; Claude's "done" lands in review.
     // Only the person accepts into done: on the board, or by saying so in chat (userAccepted).
-    const col = a.col === 'done' && !a.userAccepted ? 'review' : a.col
+    // The same for canceled (WB-28): Claude's "canceled" is a proposal in decide, with its reason, that the person confirms or keeps.
+    const proposing = a.col === 'canceled' && !a.userAccepted
+    const col = a.col === 'done' && !a.userAccepted ? 'review' : proposing ? 'decide' : a.col
     const reviewNote = a.col === 'done' && !a.userAccepted ? '（已放进「待审核」，等用户验收后才算完成；用户在对话里明确验收时带 userAccepted:true）' : ''
+    const why = (a.comment ?? a.note ?? '').trim()
+    const needWhy = '你不能直接取消工单：传 col:"canceled" 时必须用 comment（或 note）写理由，它会作为「建议取消」等用户在看板上确认；用户在对话里明确说取消时才带 userAccepted:true。'
+    const proposeNote = '。已提议取消，等用户在看板确认（放进了「等我拍板」，标为建议取消；用户也可能选择保留）'
     await loadAll($)
     if (a.action === 'init') return { result: await initWizard($, a.plan, a.confirm) }
     const b = fold(all, [], Date.now())
@@ -641,6 +658,8 @@ export const register: Register = on => {
       if (!a.title && !a.title_en) return { result: 'create 需要 title 和 title_en' }
       const { meta, err } = metaOf()
       if (err) return { result: `没建：${err}` }
+      if (proposing && !why) return { result: `没建：${needWhy}` }
+      if (proposing) meta.proposeCancel = { reason: why }
       const project = a.project ?? me.project
       if (!project || !projOf(project)) {
         if (!PROJECTS.length) return { result: '看板还没有 board：先用 action:"init" 跑初始化向导。' }
@@ -661,16 +680,21 @@ export const register: Register = on => {
       me.ticket = key
       await saveSess($)
       await linkHere($, { key })
-      return { result: `已建 ${key}「${a.title || a.title_en}」→ ${colOf(col ?? 'doing').name}，并设为本 session 当前 ticket。${reviewNote}${lackNote(key)}` }
+      return { result: `已建 ${key}「${a.title || a.title_en}」→ ${colOf(col ?? 'doing').name}，并设为本 session 当前 ticket。${reviewNote}${proposing ? proposeNote : ''}${lackNote(key)}` }
     }
 
     const tk = findTicket(b.tickets, a.key) ?? findTicket(fold(all, [], 0).tickets, a.key)
     if (!tk) return { result: `没有 ticket ${a.key}；先 list 看看` }
     const { meta, err } = metaOf(tk.key)
     if (err) return { result: `没改：${err}` }
+    if (proposing && !why) return { result: `没改：${needWhy}` }
+    // already canceled: nothing to propose
+    const propose = proposing && tk.col !== 'canceled'
+    if (propose) meta.proposeCancel = { reason: why, ...(tk.col !== 'decide' ? { from: tk.col } : {}) }
     const retitle = { ...(a.title && a.title !== tk.title ? { title: a.title } : {}), ...(a.title_en && a.title_en !== tk.title_en ? { title_en: a.title_en } : {}) }
     if (Object.keys(retitle).length) await emit($, { k: 'title', key: tk.key, ...retitle })
-    if (col && col !== tk.col) await move($, tk.key, col, col === 'done' && a.userAccepted ? '你在对话中验收' : 'Claude 更新')
+    if (col === 'canceled') { if (tk.col !== 'canceled') await cancel($, tk.key, why) } // the person said so in chat
+    else if (col && col !== tk.col && (propose || !proposing)) await move($, tk.key, col, col === 'done' && a.userAccepted ? '你在对话中验收' : propose ? 'Claude 建议取消' : 'Claude 更新')
     if (a.note) await emit($, { k: 'note', key: tk.key, text: a.note })
     if (Object.keys(meta).length) await emit($, { k: 'meta', key: tk.key, meta })
     if (a.comment) await emit($, { k: 'comment', key: tk.key, by: 'claude', text: a.comment })
@@ -680,7 +704,7 @@ export const register: Register = on => {
     const extra = a.work ? `${bl.length ? `；注意：还被 ${bl.join('、')} 卡着` : ''}${tk.due ? `；截止 ${tk.due}` : ''}；描述：${descOf(tk, 'zh') || '无'}；评论 ${tk.comments.length} 条${tk.comments.length ? `，最近：${tk.comments.slice(-3).map(c => `${c.by === 'me' ? '用户' : 'Claude'}：${c.text}`).join(' / ')}` : ''}` : ''
     const stale = lastBoard ? (await staleNow($, lastBoard)).filter(x => x.key === tk.key) : []
     const titleNote = stale.length ? `。这张票的状态变了，看板开出来的这些会话标题要跟着改，现在依次调用 mcp__ccd_session_mgmt__set_session_title（session_id 和 title 照抄）：\n${titleLines(stale)}` : ''
-    return { result: `已更新 ${tk.key}${a.work ? '，设为本 session 当前 ticket' : ''}${reviewNote}${extra}${lackNote(tk.key, tk)}${titleNote}` }
+    return { result: `已更新 ${tk.key}${a.work ? '，设为本 session 当前 ticket' : ''}${reviewNote}${propose ? proposeNote : ''}${extra}${lackNote(tk.key, tk)}${titleNote}` }
   })
 
   // ---------- 面板 ----------
@@ -701,11 +725,13 @@ export const register: Register = on => {
       return {}
     }
     if (!e.element.startsWith('board-')) return next(e)
-    const d = (e.data ?? {}) as { move?: string; col?: Col; open?: string; peek?: string | null; comment?: string; text?: string; toggleDone?: boolean }
+    const d = (e.data ?? {}) as { move?: string; col?: Col; open?: string; peek?: string | null; comment?: string; text?: string; toggle?: Col; act?: string; key?: string }
     if (d.move && d.col && COL_IDS.includes(d.col)) await personMove($, d.move, d.col, '你拖拽移动')
     if (d.comment && typeof d.text === 'string') await sendComment($, findTicket(lastBoard?.tickets ?? [], d.comment)?.key ?? d.comment, d.text) // the popup stays open
     if (d.peek !== undefined) await update($, view, cur => ({ ...cur, peek: d.peek }))
-    if (d.toggleDone) await update($, view, cur => ({ ...cur, doneOpen: !cur.doneOpen }))
+    if (d.toggle === 'done') await update($, view, cur => ({ ...cur, doneOpen: !cur.doneOpen }))
+    if (d.toggle === 'canceled') await update($, view, cur => ({ ...cur, canceledOpen: !cur.canceledOpen }))
+    if (d.act && d.key) await ticketAct($, d.act, d.key) // the popup stays open on the ticket's new state
     if (d.open) await update($, view, cur => ({ ...cur, sel: d.open ?? null, peek: null }))
     return {}
   })
@@ -753,19 +779,29 @@ export const register: Register = on => {
     const sessName = (id: string) => { const x = b.sessions.find(s => s.sid === id); return x ? x.label || x.name : id.slice(0, 6) }
     const isLive = (t: Ticket) => b.sessions.some(s => s.ticket === t.key && s.state !== 'idle')
     const proj = projOf(v.proj)
-    const projScope = b.tickets.filter(t => v.proj === 'ALL' || t.project === v.proj)
     const q = (v.q ?? '').trim().toLowerCase()
+    // Canceled tickets archived in earlier weeks: a search reaches them, and they open from the results (WB-28).
+    const archived = () => (wk ? [] : archivedCanceled(all, b, lang))
+    const projScope = (q ? [...b.tickets, ...archived()] : b.tickets).filter(t => v.proj === 'ALL' || t.project === v.proj)
     const filtered = Boolean(v.me || v.live || q)
     const scope = projScope.filter(t =>
       (!v.me || t.col === 'decide') && (!v.live || isLive(t)) && (!q || `${t.key} ${t.title} ${t.title_en ?? ''}`.toLowerCase().includes(q)))
     const count = (col: Col, list = scope) => list.filter(t => t.col === col).length
     const surf = SURFACE[v.themeResolved ?? resolved]
     const doneOpen = Boolean(v.doneOpen)
-    // The Button fallback's fold toggle is `fold-done`; with several boards in the ALL view the first one with done tickets owns that key, the others add their id.
-    const foldLane = v.proj === 'ALL' ? PROJECTS.find(p => scope.some(t => t.project === p.id && t.col === 'done'))?.id : v.proj
+    // Canceled folds like done; a search opens it (no toggle then), so archived hits show.
+    const canceledOpen = Boolean(v.canceledOpen) || Boolean(q)
+    const folded = (id: Col) => (id === 'done' && !doneOpen) || (id === 'canceled' && !canceledOpen)
+    const toggleOf = (id: Col) => t((id === 'done' ? doneOpen : canceledOpen) ? 'lane.collapse' : 'lane.expand')
+    // The Button fallback's fold toggle is `fold-done` / `fold-canceled`; with several boards in the ALL view the first one with such tickets owns that key, the others add their id.
+    const foldLane = (id: Col) => (v.proj === 'ALL' ? PROJECTS.find(p => scope.some(t => t.project === p.id && t.col === id))?.id : v.proj)
     const dueText = (tk: Ticket) => { const n = dueIn(tk, now); return n === null ? null : { text: `${t('l.due')} ${tk.due?.slice(5)}`, color: dueColor(n) } }
     const tagText = (tk: Ticket) => (tk.labels ?? []).map(l => `#${l}`).join(' ')
 
+    // The person's buttons on a ticket (WB-28): confirm / keep Claude's proposal, restore a canceled one, else cancel it.
+    const actsOf = (tk: Ticket): PeekProps['acts'] =>
+      tk.proposeCancel ? [{ id: 'confirm', label: t('cancel.ok') }, { id: 'keep', label: t('cancel.keep') }]
+        : tk.col === 'canceled' ? [{ id: 'restore', label: t('restore') }] : [{ id: 'cancel', label: t('cancel') }]
     // Everything the preview shows, localized and cleaned: the Client popup and the narrow-pane block both draw from it.
     const peekOf = (tk: Ticket): PeekProps => {
       const pal = PALETTE[resolved]
@@ -788,6 +824,7 @@ export const register: Register = on => {
         sess.length ? row(t('peek.sess'), sess[0] + (sess.length > 1 ? ` +${sess.length - 1}` : '')) : row(t('peek.sess'), t('none'), pal.mute),
         tk.branch ? row(t('d.branch'), tk.branch) : null,
         tk.pr ? row('PR', tk.pr) : null,
+        tk.proposeCancel ? row(t('d.propose'), tk.proposeCancel.reason, BAD) : null,
         row(t('d.stay'), `${days(tk.since, now)} ${t('l.days')}`),
       ].filter((x): x is ReturnType<typeof row> => x !== null)
       return {
@@ -798,10 +835,11 @@ export const register: Register = on => {
         commentsTitle: `${t('comments')} ${tk.comments.length}`,
         commentList: tk.comments.slice(-2).reverse().map(c => ({ head: `${c.by === 'me' ? t('you') : 'Claude'} · ${md(c.t)} ${hhmm(c.t)}`, text: clean(c.text) })),
         footer: `${t('peek.created', md(tk.created))} · ${t('peek.updated', ago(lang, tk.log.at(-1)?.t ?? tk.created, now))}`,
-        open: t('peek.open'), hint: t('peek.hint'), commentPh: t('peek.cmt.ph'), send: t('peek.send'), ...pal,
+        open: t('peek.open'), hint: t('peek.hint'), commentPh: t('peek.cmt.ph'), send: t('peek.send'), acts: wk ? [] : actsOf(tk), ...pal,
       }
     }
-    const peekTk = v.peek ? b.tickets.find(x => x.key === v.peek) : undefined // a ticket that is gone shows nothing
+    const findShown = (key?: string | null) => (key ? b.tickets.find(x => x.key === key) ?? archived().find(x => x.key === key) : undefined)
+    const peekTk = findShown(v.peek) // a ticket that is gone shows nothing
 
     // The Button fallback of the accent-stripe card: tint, a 1-cell stripe in the status color (live color while a session works it), no border. Its height follows its content, at most 3 title rows like the Client card.
     const card = (tk: Ticket, stripe: string, w: number) => {
@@ -853,20 +891,22 @@ export const register: Register = on => {
           ...(grid ? { grid } : {}),
           ...(mine ? { peek: mine } : {}),
           surf,
-          labels: { dropTo: t('l.dropTo'), comments: t('l.comments'), days: t('l.days'), blocked: t('l.blocked'), live: t('l.live') },
+          labels: { dropTo: t('l.dropTo'), comments: t('l.comments'), days: t('l.days'), blocked: t('l.blocked'), live: t('l.live'), cancelOk: t('cancel.ok'), keep: t('cancel.keep') },
+          ...(list.some(t => t.col === 'canceled') ? {} : { dropCancel: { name: cn('canceled'), color: colOf('canceled').color } }),
           cols: shown.filter(c => !grid || list.some(t => t.col === c.id)).map(c => {
             const items = list.filter(t => t.col === c.id)
-            const folded = c.id === 'done' && !doneOpen // done starts folded: header, count and toggle only
+            // done and canceled start folded: header, count and toggle only
             return {
             id: c.id, name: cn(c.id), color: c.color, count: items.length,
-            ...(c.id === 'done' && items.length ? { toggle: t(doneOpen ? 'lane.collapse' : 'lane.expand') } : {}),
-            cards: (folded ? [] : items).map(t => {
+            ...((c.id === 'done' || (c.id === 'canceled' && !q)) && items.length ? { toggle: toggleOf(c.id) } : {}),
+            cards: (folded(c.id) ? [] : items).map(t => {
               const age = t.col === 'done' ? 0 : days(t.since, now)
               return {
                 key: t.key, ...splitCode(titleOf(t, lang)), color: projOf(t.project)?.color ?? MUTE, src: t.src, live: isLive(t), done: t.col === 'done',
                 age: age > 0 ? age : null, ageColor: age > 7 ? BAD : surf.mute, pr: t.pr ?? '',
                 priority: t.priority ?? '', priorityColor: PRIORITY_COLOR[t.priority ?? 'P2'], comments: t.comments.length,
                 labels: tagText(t), due: dueText(t)?.text ?? '', dueColor: dueText(t)?.color ?? MUTE, blocked: openBlockers(t, b.tickets).join(','),
+                ...(t.proposeCancel ? { propose: true } : {}),
               }
             }),
             }
@@ -877,16 +917,19 @@ export const register: Register = on => {
         const rows = Math.max(base, mine ? peekRect(region, base, grid ? 2 : 4).h + 2 : 0) // popup height, plus 2
         return <els.Client key={`board-${lane}`} module="./board-client.tsx" props={props} width={region} height={rows} />
       }
-      // Bold status-colored name + muted count; the done column folds (default) behind a plain toggle Button.
+      // Bold status-colored name + muted count; the done and canceled columns fold (default) behind a plain toggle Button.
       const head = (c: (typeof COLS)[number], n: number) => (
         <Box flexGrow={1} justifyContent="space-between" gap={1}>
           <Box gap={1}><Text bold color={c.color}>{cn(c.id)}</Text><Text color={surf.mute}>{n}</Text></Box>
-          {c.id === 'done' && n ? <Button key={lane === foldLane ? 'fold-done' : `fold-done-${lane}`} plain label={t(doneOpen ? 'lane.collapse' : 'lane.expand')} onPress={() => setView({ doneOpen: !doneOpen })} /> : null}
+          {(c.id === 'done' || (c.id === 'canceled' && !q)) && n ? (
+            <Button key={lane === foldLane(c.id) ? `fold-${c.id}` : `fold-${c.id}-${lane}`} plain label={toggleOf(c.id)}
+              onPress={() => setView(c.id === 'done' ? { doneOpen: !doneOpen } : { canceledOpen: !Boolean(v.canceledOpen) })} />
+          ) : null}
         </Box>
       )
       // ponytail: the 3-row cap is a clip to 3 x inner width cells; a wrap at word breaks may still show fewer, never more rows
       const cards = (c: (typeof COLS)[number], items: Ticket[], w: number) =>
-        c.id === 'done' && !doneOpen ? null : <Box flexDirection="column" gap={1}>{items.map(x => card(x, c.color, w))}</Box>
+        folded(c.id) ? null : <Box flexDirection="column" gap={1}>{items.map(x => card(x, c.color, w))}</Box>
       if (colW < 18) {
         // Narrow pane: stack the columns as sections.
         return (
@@ -919,7 +962,7 @@ export const register: Register = on => {
     }
 
     // ----- detail -----
-    const sel = v.sel ? b.tickets.find(t => t.key === v.sel) : undefined
+    const sel = findShown(v.sel)
     if (sel) {
       const c = colOf(sel.col)
       const P = projOf(sel.project)
@@ -1049,6 +1092,21 @@ export const register: Register = on => {
               <Button key="reject" label={t('reject')} onPress={() => move($, sel.key, 'doing', '你打回')} />
             </Box>
           ) : null}
+
+          {wk ? null : sel.proposeCancel ? (
+            <Box gap={1} flexWrap="wrap">
+              <Text color={BAD} bold>{t('cancel.ask', clean(sel.proposeCancel.reason))}</Text>
+              <Button key="confirm-cancel" label={t('cancel.ok')} variant="primary" onPress={() => ticketAct($, 'confirm', sel.key)} />
+              <Button key="keep" label={t('cancel.keep')} onPress={() => ticketAct($, 'keep', sel.key)} />
+            </Box>
+          ) : sel.col === 'canceled' ? (
+            <Box gap={1}><Button key="restore" label={t('restore')} onPress={() => ticketAct($, 'restore', sel.key)} /></Box>
+          ) : (
+            <Box flexDirection="column">
+              <Box gap={1}><Button key="cancel" label={t('cancel')} onPress={() => ticketAct($, 'cancel', sel.key)} /></Box>
+              {els.Input ? <els.Input key="cancel-reason" placeholder={t('cancel.ph')} onSubmit={(text: string) => ticketAct($, 'cancel', sel.key, text)} /> : null}
+            </Box>
+          )}
 
           <Box flexDirection="column">
             <Text color={MUTE} bold>{t('desc')}</Text>
@@ -1234,6 +1292,7 @@ export const register: Register = on => {
               <Box gap={1}>
                 <Button key="peek-open" label={k.open} variant="primary" onPress={() => setView({ sel: peekTk.key, peek: null })} />
                 <Button key="peek-close" label={t('peek.close')} onPress={() => setView({ peek: null })} />
+                {k.acts.map(a => <Button key={`peek-${a.id}`} label={a.label} onPress={() => ticketAct($, a.id, k.key)} />)}
               </Box>
             </Box>
           )

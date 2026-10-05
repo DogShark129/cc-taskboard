@@ -97,6 +97,11 @@ h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
 .colh .n{color:var(--mute);font-weight:500}
 .cards{display:flex;flex-direction:column;gap:8px;min-height:84px;padding:6px;border-radius:12px;background:var(--col);transition:background .12s,outline-color .12s;outline:2px dashed transparent;outline-offset:-2px}
 .cards.over{outline-color:var(--accent);background:var(--accent-bg)}
+/* the canceled column of a board that has none: a drop target only while a card is dragged (WB-28) */
+.col.drop-only{display:none}
+body.dragging .col.drop-only{display:flex}
+.card .pc{display:flex;gap:6px;flex-wrap:wrap;margin:-3px 0 8px}
+.card .pc .why{font-size:11px;color:var(--bad);width:100%}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 11px;cursor:pointer;font-size:13px;position:relative}
 .card:hover{border-color:var(--accent)}
 .card[draggable=true]{cursor:grab}
@@ -284,7 +289,7 @@ const isoWeek = ms => {
 const S = {
   lang: localStorage.getItem('wb.lang') === 'en' ? 'en' : 'zh',
   theme: ['light', 'dark'].includes(localStorage.getItem('wb.theme')) ? localStorage.getItem('wb.theme') : 'auto', week: 0, proj: 'ALL', tab: 'board', q: '', me: false, live: false,
-  collapsed: new Set(JSON.parse(localStorage.getItem('wb.collapsed') || '[]')), sel: null, peek: null, editing: null, D: null, offline: false,
+  collapsed: new Set(JSON.parse(localStorage.getItem('wb.collapsed') || '[]')), sel: null, peek: null, editing: null, D: null, offline: false, canceledOpen: false,
 }
 const t = (k, ...a) => (S.D?.i18n[k] ?? k).replace(/\{(\d)\}/g, (_, i) => a[Number(i)])
 const ro = () => S.week > 0
@@ -293,7 +298,8 @@ const colOf = id => S.D.cols.find(c => c.id === id) ?? S.D.cols[1]
 const prioColor = p => S.D.priorities.find(x => x.id === p)?.color ?? 'var(--mute)'
 const lz = (text, color) => `<span class="lz" style="--c:${color}">${esc(text)}</span>`
 const tickets = () => S.D.board.tickets
-const findTicket = key => tickets().find(x => x.key === key || (x.aliases || []).includes(key))
+// Canceled tickets archived in earlier weeks come along for the search, and open from its results (WB-28).
+const findTicket = key => [...tickets(), ...(S.D.archived || [])].find(x => x.key === key || (x.aliases || []).includes(key))
 const sessions = () => S.D.board.sessions
 const isLive = tk => sessions().some(s => s.ticket === tk.key && s.state !== 'idle')
 const sessName = id => { if (id === 'web') return t('w.link'); const x = sessions().find(s => s.sid === id); return x ? x.label || x.name : id.slice(0, 6) }
@@ -375,7 +381,8 @@ const plainLines = src => String(src || '').split('\n').map(l => clean(l.replace
 const projScope = () => tickets().filter(x => S.proj === 'ALL' || x.project === S.proj)
 const scope = () => {
   const q = S.q.trim().toLowerCase()
-  return projScope().filter(x => (!S.me || x.col === 'decide') && (!S.live || isLive(x)) && (!q || `${x.key} ${x.title}`.toLowerCase().includes(q)))
+  const pool = q ? [...projScope(), ...(S.D.archived || []).filter(x => S.proj === 'ALL' || x.project === S.proj)] : projScope()
+  return pool.filter(x => (!S.me || x.col === 'decide') && (!S.live || isLive(x)) && (!q || `${x.key} ${x.title}`.toLowerCase().includes(q)))
 }
 let composing = false, pending = false
 function render(fresh) {
@@ -460,6 +467,7 @@ function card(tk) {
   const live = isLive(tk)
   return `<article class="card ${tk.col === 'done' ? 'done' : ''} ${live ? 'live' : ''}" draggable="${ro() ? 'false' : 'true'}" data-act="peek" data-key="${tk.key}">
     <div class="t">${code ? `<b>${esc(code)}</b> ` : ''}${esc(rest)}</div>
+    ${tk.proposeCancel && !ro() ? `<div class="pc"><span class="why">${esc(t('cancel.ask', clean(tk.proposeCancel.reason)))}</span>${actsHtml(tk)}</div>` : ''}
     ${tk.labels?.length ? `<div class="tags">${esc(tagText(tk))}</div>` : ''}
     <div class="foot">
       <span class="key" style="color:${projOf(tk.project)?.color ?? 'var(--mute)'}">${esc(tk.key)}</span>
@@ -473,12 +481,19 @@ function card(tk) {
       ${tk.pr ? `<span class="pr">${ic('pr', 'sm')}${esc(tk.pr)}</span>` : ''}
     </div></article>`
 }
-// The canceled column only shows where it holds a ticket.
-const colsHtml = list => `<div class="cols">${S.D.cols.filter(c => c.id !== 'canceled' || list.some(x => x.col === 'canceled')).map(c => {
+// The person's buttons on a ticket (WB-28): confirm / keep Claude's proposal, restore a canceled one, else cancel it.
+const actsHtml = tk => {
+  const b = (act, label, cls = '') => `<button class="btn ${cls}" data-act="${act}" data-key="${esc(tk.key)}">${esc(t(label))}</button>`
+  return tk.proposeCancel ? b('confirm', 'cancel.ok', 'primary') + b('keep', 'cancel.keep') : tk.col === 'canceled' ? b('restore', 'restore') : b('cancel', 'cancel')
+}
+// The canceled column only shows where it holds a ticket; elsewhere it is there only as a drop target while dragging.
+// It folds like done in the pane: count only until expanded, open while searching.
+const colsHtml = list => `<div class="cols">${S.D.cols.map(c => {
   const items = list.filter(x => x.col === c.id)
-  return `<section class="col ${items.length ? '' : 'none'}" style="--c:${c.color}">
-    <div class="colh">${ic(c.icon)}<span>${esc(colName(c))}</span><span class="n">${items.length}</span></div>
-    <div class="cards" data-col="${c.id}">${items.map(card).join('')}</div></section>`
+  const folded = c.id === 'canceled' && !S.canceledOpen && !S.q.trim()
+  return `<section class="col ${items.length ? '' : 'none'} ${c.id === 'canceled' && !items.length ? 'drop-only' : ''}" style="--c:${c.color}">
+    <div class="colh">${ic(c.icon)}<span>${esc(colName(c))}</span><span class="n">${items.length}</span>${c.id === 'canceled' && items.length && !S.q.trim() ? `<span class="sp"></span><button class="lnk" data-act="foldcanceled">${esc(t(folded ? 'lane.expand' : 'lane.collapse'))}</button>` : ''}</div>
+    <div class="cards" data-col="${c.id}">${folded ? '' : items.map(card).join('')}</div></section>`
 }).join('')}</div>`
 
 function boardHtml() {
@@ -513,6 +528,8 @@ function detailHtml(tk) {
   const side = `<aside class="dside">
     ${ro() ? '' : `<div class="sec"><h4>${esc(t('status'))}</h4><select class="sel" data-sel="status">${S.D.cols.map(x => `<option value="${x.id}" ${x.id === tk.col ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="sec"><h4>${esc(t('priority'))}</h4><select class="sel" data-sel="priority"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option ${p.id === tk.priority ? 'selected' : ''}>${p.id}</option>`).join('')}</select></div>`}
+    ${ro() ? '' : tk.proposeCancel ? `<div class="review-box"><b style="color:var(--bad)">${esc(t('cancel.ask', clean(tk.proposeCancel.reason)))}</b><div class="row">${actsHtml(tk)}</div></div>`
+      : `<div class="pk-acts">${actsHtml(tk)}</div>`}
     ${tk.col === 'review' && !ro() ? `<div class="review-box"><b style="color:${c.color}">${esc(t('review.wait'))}</b><div class="row"><button class="btn primary" data-act="accept">${esc(t('accept'))}</button><button class="btn" data-act="reject">${esc(t('reject'))}</button></div></div>` : ''}
     <div class="sec"><h4>${esc(t('details'))}</h4>
       ${kv(t('d.src'), esc(tk.src === 'me' ? t('src.me') : t('src.claude')))}
@@ -592,6 +609,7 @@ function renderPeek() {
       : `<span class="muted">${esc(t('none'))}</span>`),
     tk.branch ? row(t('d.branch'), `<code>${esc(tk.branch)}</code>`) : '',
     tk.pr ? row('PR', `<span style="color:var(--ok)">${esc(tk.pr)}</span>`) : '',
+    tk.proposeCancel ? row(t('d.propose'), `<span style="color:var(--bad)">${esc(clean(tk.proposeCancel.reason))}</span>`) : '',
     row(t('d.stay'), `${Math.max(0, Math.floor((now - tk.since) / DAY))} ${esc(t('l.days'))}`),
   ].join('')
   const notes = (tk.notes ?? []).map(x => plainLines(x).join(' ')).filter(Boolean)
@@ -603,7 +621,7 @@ function renderPeek() {
     <div class="pk-body">
       <div>
         <h2 class="pk-title">${code ? `<b style="color:${P?.color ?? 'var(--mute)'}">${esc(code)}</b> ` : ''}${esc(rest)}</h2>
-        <div class="pk-acts"><button class="btn primary" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.open'))}</button></div>
+        <div class="pk-acts"><button class="btn primary" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.open'))}</button>${ro() ? '' : actsHtml(tk)}</div>
         <div class="sec"><h4>${esc(t('desc'))}</h4>${desc}</div>
         <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length}</h4>${cms}${tk.comments.length ? `<button class="lnk" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.all'))}</button>` : ''}
         ${ro() ? '' : `<div class="pk-cmt"><textarea id="pkCmt" rows="1" placeholder="${esc(t('peek.cmt.ph'))}"></textarea><button class="btn" data-act="peekcomment">${esc(t('peek.send'))}</button></div>`}</div>
@@ -670,6 +688,10 @@ document.addEventListener('click', e => {
     case 'closenew': $('#newDlg').close(); break
     case 'accept': run({ type: 'accept', key: S.sel }); break
     case 'reject': run({ type: 'reject', key: S.sel }); break
+    // WB-28: the reason is optional; the browser's own prompt asks for it, Cancel there keeps the ticket
+    case 'cancel': { const why = prompt(t('cancel.ph'), ''); if (why !== null) run({ type: 'cancel', key: d.key, text: why }); break }
+    case 'confirm': case 'keep': case 'restore': run({ type: d.act, key: d.key }); break
+    case 'foldcanceled': S.canceledOpen = !S.canceledOpen; render(); break
     case 'editdesc': S.editing = S.sel; render(true); $('#descTa')?.focus(); break
     case 'canceldesc': S.editing = null; render(true); break
     case 'savedesc': { const v = $('#descTa').value; S.editing = null; run({ type: 'meta', key: S.sel, desc: v }); break }
@@ -734,8 +756,9 @@ document.addEventListener('dragstart', e => {
   const c = e.target.closest?.('.card')
   if (!c || ro()) { e.preventDefault(); return }
   dragKey = c.dataset.key; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', dragKey); e.dataTransfer.effectAllowed = 'move'
+  setTimeout(() => document.body.classList.add('dragging')) // shows the canceled drop column; a layout change inside dragstart would abort the drag
 })
-document.addEventListener('dragend', () => { dragKey = null; document.querySelectorAll('.dragging,.over').forEach(x => x.classList.remove('dragging', 'over')) })
+document.addEventListener('dragend', () => { dragKey = null; document.body.classList.remove('dragging'); document.querySelectorAll('.dragging,.over').forEach(x => x.classList.remove('dragging', 'over')) })
 document.addEventListener('dragover', e => {
   const z = e.target.closest?.('.cards')
   if (!z || !dragKey) return

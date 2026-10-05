@@ -9,7 +9,7 @@ Features:
 - A Jira-style board across all Claude Code sessions, in a pane inside each session.
 - A `ticket` tool for Claude (`mcp__cc-taskboard__ticket`): list, create, update, and an init wizard.
 - Automatic status from git and GitHub (`git commit`, `gh pr create`, `gh pr merge`), from file edits, and from Claude's questions (`AskUserQuestion`).
-- A review gate: Claude can move a ticket only as far as "In review"; only you accept it into "Done".
+- A review gate: Claude can move a ticket only as far as "In review"; only you accept it into "Done". Canceling is yours too: Claude can only propose it, with a reason.
 - Comment wake-up: a comment you leave on a ticket is delivered to the session that owns it, which acts on it.
 - A new session per ticket: "Do in a new session" (or dragging a ticket from To do to In progress) has Claude prepare a session for that ticket; spawned sessions keep their title in sync with the ticket's status.
 - Per-project boards, matched by the session's working directory.
@@ -82,7 +82,7 @@ Claude is told to look for an existing ticket before starting a piece of work, a
 
 ### Columns and the review gate
 
-Decision (waiting for you), To do, In progress, Waiting (on others: PR review, a reply), In review, Done, and Canceled (shown only when it holds a ticket).
+Decision (waiting for you), To do, In progress, Waiting (on others: PR review, a reply), In review, Done, and Canceled (shown only when it holds a ticket, and as a drop target while you drag a card).
 
 Automatic moves for the session's current ticket:
 
@@ -93,7 +93,9 @@ Automatic moves for the session's current ticket:
 
 Claude can move a ticket to In review at most. A `done` from Claude lands in In review, unless you said in the chat that you accept it (the tool's `userAccepted`). On the board, "Accept" moves it to Done and "Send back" returns it to In progress.
 
-Done tickets are folded behind an "Expand" toggle. Done and canceled tickets from earlier weeks are archived off the current board.
+Canceling works the same way. A `canceled` from Claude lands in Decision as a proposal and needs a reason (`comment` or `note`); the card, the preview and the detail then offer "Cancel it" and "Keep" (back to the column it came from). Claude cancels directly only when you said so in the chat (`userAccepted`). You can cancel any ticket from its preview or detail ("Cancel ticket", with an optional reason in the detail and on the web), or by dragging it to Canceled; the feed shows who canceled what and why. "Restore" on a canceled ticket returns it to the column it was in before.
+
+Done and canceled tickets are folded behind an "Expand" toggle. Done and canceled tickets from earlier weeks are archived off the current board; a search still finds archived canceled ones.
 
 ### Dragging, preview and detail
 

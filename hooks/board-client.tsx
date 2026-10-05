@@ -8,7 +8,7 @@ import type { BoardProps, CardProps, DragState } from '../types'
 export const HEAD_H = 2
 export const CARD_H = 4 // the maximum card height (3 title rows)
 // The preview popup (Jira's issue view): absolutely positioned over the columns, centered. Shared by the pointer math, the draw and the tests.
-// Rows inside it, border = row 0: 1 header, 2 gap, 3-4 title, 5 action button, body below, footer on row h-2.
+// Rows inside it, border = row 0: 1 header, 2 gap, 3-4 title, 5 action buttons (open, then acts), body below, footer on row h-2.
 export const PEEK_H = 16
 export const PEEK_MAX_H = 26
 export const PEEK_MAX_W = 96
@@ -35,13 +35,26 @@ export const peekRect = (region: number, rows = 0, margin = 4) => {
   const w = Math.min(PEEK_MAX_W, region - margin)
   return { w, h: Math.min(PEEK_MAX_H, Math.max(w >= PEEK_WIDE ? PEEK_H : PEEK_MAX_H, rows)), top: 1, left: Math.floor((region - w) / 2) }
 }
-// Every hit area, popup-relative (dx, dy): content starts at dx 2 (border + padding).
-export const peekGeo = (region: number, rows: number, open: string, margin = 4) => {
+// Every hit area, popup-relative (dx, dy): content starts at dx 2 (border + padding). acts = the labels of the buttons after open, 1 cell apart.
+export const peekGeo = (region: number, rows: number, open: string, margin = 4, acts: string[] = []) => {
   const r = peekRect(region, rows, margin)
   const wide = r.w >= PEEK_WIDE
   const leftW = wide ? r.w - 4 - PEEK_SIDE - 2 : r.w - 4
-  return { ...r, wide, leftW, closeX: r.w - 4, titleY: [3, 4], btn: { y: 5, x0: 2, x1: 2 + cells(`[ ${open} ]`) } }
+  const btn = { y: 5, x0: 2, x1: 2 + cells(`[ ${open} ]`) }
+  let x = btn.x1 + 1
+  const actX = acts.map(a => { const r = { x0: x, x1: x + cells(`[ ${a} ]`) }; x = r.x1 + 1; return r })
+  return { ...r, wide, leftW, closeX: r.w - 4, titleY: [3, 4], btn, acts: actX }
 }
+// A proposed-cancel card's meta row, its last (WB-28): 确认取消 then 保留, 1 cell apart, from the content's left edge (stripe 1 + padding 1).
+export const proposeHits = (c: { x: number; y: number; h: number }, ok: string, keep: string) => {
+  const x0 = c.x + 2
+  return [{ id: 'confirm' as const, y: c.y + c.h - 1, x0, x1: x0 + cells(ok) }, { id: 'keep' as const, y: c.y + c.h - 1, x0: x0 + cells(ok) + 1, x1: x0 + cells(ok) + 1 + cells(keep) }]
+}
+
+// The canceled drop bar's row (WB-28): the wide board's blank row under the column names; on the grid, over the first section's header.
+// ponytail: a bar, not a 7th column: a column appearing mid-drag would shift every card under the pointer. On the grid it hides the first
+// section's header while dragging; that section still takes drops on its cards (a folded done section alone up there would not)
+export const dropBarY = (grid?: number) => (grid ? 0 : 1)
 
 // The board's columns, drawn where pointer events reach: press a card and drag it to another column
 // to move it (posts { move, col }); press and release in place to preview it (posts { peek }).
@@ -93,43 +106,53 @@ const BoardClient: ClientModule<BoardProps, DragState> = (p, s) => {
   const lay = p.grid ? gridLayout(p.cols, p.grid) : null // grid mode: sections stacked, drag targets are sections
   const margin = lay ? 2 : 4
   const colAt = (x: number) => Math.max(0, Math.min(p.cols.length - 1, Math.floor(x / slot)))
+  const region = lay ? p.grid! : p.cols.length * p.colW + p.cols.length - 1
+  const rows = boardHeight(p.cols, p.colW, p.grid)
+  // While a card is dragged and the board has no canceled column, a row without cards is a drop bar for it: unit p.cols.length.
+  const barY = p.dropCancel ? dropBarY(p.grid) : -1
   // The column (wide) or section (grid, by the row only) a cell falls in.
-  const unitAt = (x: number, y: number) => (lay ? Math.max(0, lay.sections.findLastIndex(s => s.y <= y)) : colAt(x))
+  const unitAt = (x: number, y: number) => (st.drag && y === barY ? p.cols.length : lay ? Math.max(0, lay.sections.findLastIndex(s => s.y <= y)) : colAt(x))
+  // The card box under a cell (x, y, w, h), for the drag and a proposed card's two words.
   const cardAt = (x: number, y: number) => {
-    if (lay) return lay.sections.flatMap(s => s.cards).find(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h)?.key ?? null
-    return columnLayout(p.cols[colAt(x)]?.cards ?? [], p.colW).find(c => y >= c.y && y < c.y + c.h)?.key ?? null
+    if (lay) return lay.sections.flatMap(s => s.cards).find(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) ?? null
+    const c = columnLayout(p.cols[colAt(x)]?.cards ?? [], p.colW).find(c => y >= c.y && y < c.y + c.h)
+    return c ? { ...c, x: colAt(x) * slot, w: p.colW } : null
   }
-  // The done column's right-aligned expand / collapse text, on its header row.
+  const proposed = new Set(p.cols.flatMap(c => c.cards.filter(k => k.propose).map(k => k.key)))
+  // The done / canceled column's right-aligned expand / collapse text, on its header row: the column's id.
   const toggleAt = (x: number, y: number) => {
     const ci = lay ? lay.sections.findIndex(s => s.y === y) : y === 0 ? colAt(x) : -1
     const tg = p.cols[ci]?.toggle
-    return Boolean(tg) && x >= (lay ? p.grid! : ci * slot + p.colW) - cells(tg!)
+    return tg && x >= (lay ? p.grid! : ci * slot + p.colW) - cells(tg) ? p.cols[ci].id : null
   }
 
-  const region = lay ? p.grid! : p.cols.length * p.colW + p.cols.length - 1
-  const rows = boardHeight(p.cols, p.colW, p.grid)
   s.onPointer(ev => {
     if (p.peek) {
       if (ev.type === 'down' && ev.button === 'left') s.setState({ ...st, pd: true })
       else if (ev.type === 'up' && st.pd) {
-        const g = peekGeo(region, rows, p.peek.open, margin)
+        const g = peekGeo(region, rows, p.peek.open, margin, p.peek.acts.map(a => a.label))
         const dx = ev.x - g.left
         const dy = ev.y - g.top
+        const act = dy === g.btn.y ? g.acts.findIndex(a => dx >= a.x0 && dx < a.x1) : -1
         if (dx < 0 || dx >= g.w || dy < 0 || dy >= g.h || (dy === 1 && dx >= g.closeX)) s.post({ peek: null })
         else if ((dy >= g.titleY[0] && dy <= g.titleY[1] && dx >= 2 && dx < 2 + g.leftW) || (dy === g.btn.y && dx >= g.btn.x0 && dx < g.btn.x1)) s.post({ open: p.peek.key })
+        else if (act >= 0) s.post({ act: p.peek.acts[act].id, key: p.peek.key })
         s.setState({ drag: null, from: -1, over: -1 })
       }
       return
     }
     if (ev.type === 'down' && ev.button === 'left') {
-      if (toggleAt(ev.x, ev.y)) { s.post({ toggleDone: true }); return }
-      const key = cardAt(ev.x, ev.y)
-      if (key) s.setState({ drag: key, from: unitAt(ev.x, ev.y), over: unitAt(ev.x, ev.y) })
+      const tg = toggleAt(ev.x, ev.y)
+      if (tg) { s.post({ toggle: tg }); return }
+      const c = cardAt(ev.x, ev.y)
+      const hit = c && proposed.has(c.key) ? proposeHits(c, p.labels.cancelOk, p.labels.keep).find(h => ev.y === h.y && ev.x >= h.x0 && ev.x < h.x1) : undefined
+      if (c && hit) s.post({ act: hit.id, key: c.key })
+      else if (c) s.setState({ drag: c.key, from: unitAt(ev.x, ev.y), over: unitAt(ev.x, ev.y) })
     } else if (ev.type === 'move' && st.drag && ev.button) {
       if (unitAt(ev.x, ev.y) !== st.over) s.setState({ ...st, over: unitAt(ev.x, ev.y) })
     } else if (ev.type === 'up' && st.drag) {
       const to = unitAt(ev.x, ev.y)
-      s.post(to === st.from ? { peek: st.drag } : { move: st.drag, col: p.cols[to].id })
+      s.post(to === st.from ? { peek: st.drag } : { move: st.drag, col: to === p.cols.length ? 'canceled' : p.cols[to].id })
       s.setState({ drag: null, from: -1, over: -1 })
     }
   })
@@ -171,13 +194,22 @@ const BoardClient: ClientModule<BoardProps, DragState> = (p, s) => {
             <Text {...tx} color={k.done ? surf.mute : surf.text} dimColor={isDragged}>{k.code ? <Text {...tx} bold>{k.code}</Text> : null}{k.code ? ' ' : ''}{k.rest}</Text>
           </Box>
           <Box justifyContent="space-between" gap={1} height={1} overflow="hidden" backgroundColor={surf.tint}>
-            <Box gap={1} flexShrink={0} backgroundColor={surf.tint}>
-              <Text {...tx} color={k.done ? surf.mute : k.color} bold strikethrough={k.done}>{k.key}</Text>
-              {k.priority ? <Text color={k.priorityColor} inverse bold>{` ${k.priority} `}</Text> : null}
-              {labels ? <Text {...tx} color={surf.mute}>{labels}</Text> : null}
-            </Box>
+            {k.propose ? (
+              // where proposeHits looks: the two words first, the key moves to the right side
+              <Box gap={1} flexShrink={0} backgroundColor={surf.tint}>
+                <Text {...tx} color="#d9777a" bold>{p.labels.cancelOk}</Text>
+                <Text {...tx} color={surf.accent} bold>{p.labels.keep}</Text>
+              </Box>
+            ) : (
+              <Box gap={1} flexShrink={0} backgroundColor={surf.tint}>
+                <Text {...tx} color={k.done ? surf.mute : k.color} bold strikethrough={k.done}>{k.key}</Text>
+                {k.priority ? <Text color={k.priorityColor} inverse bold>{` ${k.priority} `}</Text> : null}
+                {labels ? <Text {...tx} color={surf.mute}>{labels}</Text> : null}
+              </Box>
+            )}
             {/* ponytail: the right side clips at the card edge first; labels were already cut to what the key and priority leave */}
             <Box gap={1} flexShrink={1} overflow="hidden" backgroundColor={surf.tint}>
+              {k.propose ? <Text {...tx} color={k.color} bold>{k.key}</Text> : null}
               {k.blocked ? <Text {...tx} color="#d9777a">{p.labels.blocked} {k.blocked}</Text> : null}
               {k.due ? <Text {...tx} color={k.dueColor}>{k.due}</Text> : null}
               {k.live ? <Text {...tx} color={surf.live}>{p.labels.live}</Text> : null}
@@ -208,7 +240,10 @@ const BoardClient: ClientModule<BoardProps, DragState> = (p, s) => {
               <Box height={2} overflow="hidden" backgroundColor={k.bg}>
                 <Text {...tx} bold>{k.code ? <Text {...tx} bold color={k.color}>{k.code}</Text> : null}{k.code ? ' ' : ''}{k.rest}</Text>
               </Box>
-              <Text {...tx} color={k.color} bold>{`[ ${k.open} ]`}</Text>
+              <Box height={1} gap={1} overflow="hidden" backgroundColor={k.bg}>
+                <Text {...tx} color={k.color} bold>{`[ ${k.open} ]`}</Text>
+                {k.acts.map(a => <Text key={`a-${a.id}`} {...tx} color={a.id === 'cancel' || a.id === 'confirm' ? '#d9777a' : k.color} bold>{`[ ${a.label} ]`}</Text>)}
+              </Box>
               <Text {...tx} color={k.mute} bold>{k.descTitle}</Text>
               {k.desc.length ? k.desc.slice(0, descMax).map((l, i) => <Text key={`d${i}`} {...tx} wrap="truncate-end">{l}</Text>) : <Text {...tx} color={k.mute}>{k.descNone}</Text>}
               <Text {...tx} color={k.mute} bold>{k.commentsTitle}</Text>
@@ -262,6 +297,11 @@ const BoardClient: ClientModule<BoardProps, DragState> = (p, s) => {
           <Box flexDirection="column" gap={1}>{c.cards.map(k => drawCard(k, c.color))}</Box>
         </Box>
       ))}
+      {st.drag !== null && p.dropCancel ? (
+        <Box position="absolute" top={barY} left={0} width={region} height={1} backgroundColor={surf.tint}>
+          <Text bold inverse={st.over === p.cols.length} color={p.dropCancel.color}>{` ${p.labels.dropTo} ${p.dropCancel.name} `}</Text>
+        </Box>
+      ) : null}
     </Box>
   )
 }

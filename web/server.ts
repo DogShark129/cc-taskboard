@@ -1,9 +1,9 @@
 /// <reference lib="deno.ns" />
 // Local web app for cc-taskboard: same event logs as the mod, same fold (hooks/core.ts).
 // Run: deno run --allow-read --allow-write --allow-env --allow-net=127.0.0.1 --allow-run=claude,defaults web/server.ts
-import { COL_IDS, COLS, DATA_DIR, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, boardForWeek, descOf, fold, parseLines, projName, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
+import { COL_IDS, COLS, DATA_DIR, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, archivedCanceled, boardForWeek, cancelEv, descOf, fold, keepTo, parseLines, projName, restoreTo, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
 import type { Ev, K } from '../hooks/core.ts'
-import type { Sess } from '../types/index.d.ts'
+import type { Sess, Ticket } from '../types/index.d.ts'
 
 type Agents = Map<string, { name: string; status: string }>
 export type Opts = {
@@ -118,9 +118,12 @@ export function startServer(opts: Opts = {}) {
     const known = await enrich(sessions)
     const r = week ? boardForWeek(evs, now, week, lang) : { board: fold(evs, known, now, lang), asOf: now }
     // The page shows title / desc as they are: hand it the side for this language (the other when that one is missing).
-    const tickets = r.board.tickets.map(tk => ({ ...tk, title: titleOf(tk, lang), desc: descOf(tk, lang) || undefined }))
+    const side = (tk: Ticket) => ({ ...tk, title: titleOf(tk, lang), desc: descOf(tk, lang) || undefined })
+    const tickets = r.board.tickets.map(side)
     return {
       board: { ...r.board, tickets, ...(week ? { sessions: known } : {}) },
+      // Canceled tickets archived in earlier weeks: only the search shows them (WB-28).
+      archived: week ? [] : archivedCanceled(evs, r.board, lang).map(side),
       asOf: r.asOf, weeksBack: back, week,
       projects: PROJECTS.map(p => ({ id: p.id, name: projName(lang, p.id), color: p.color, icon: p.icon })),
       cols: COLS.map(c => ({ id: c.id, name: tl(lang, `col.${c.id}` as K), color: c.color, icon: c.icon })),
@@ -177,7 +180,14 @@ export function startServer(opts: Opts = {}) {
 
       const key = resolve(str(body.key, 'key'))
       if (!evs.some(e => e.k === 'create' && resolve(e.key) === key)) throw new HttpError(404, `no ticket ${body.key}`)
-      if (type === 'move' || type === 'accept' || type === 'reject') {
+      const tk = fold(evs, [], 0).tickets.find(x => x.key === key)
+      if (type === 'cancel' || type === 'confirm' || (type === 'move' && col === 'canceled')) {
+        // WB-28: the person's cancel is a move by 'me' whose text is the reason; confirm takes the one Claude proposed
+        await append(cancelEv(key, type === 'confirm' ? tk?.proposeCancel?.reason : body.text === undefined ? '' : str(body.text, 'text')))
+      } else if (type === 'keep' || type === 'restore') {
+        if (!tk || (type === 'keep' ? !tk.proposeCancel : tk.col !== 'canceled')) throw new HttpError(400, `${key}: nothing to ${type}`)
+        await append({ k: 'move', key, col: type === 'keep' ? keepTo(tk) : restoreTo(tk), text: type === 'keep' ? '你保留' : '你恢复' })
+      } else if (type === 'move' || type === 'accept' || type === 'reject') {
         const to = type === 'accept' ? 'done' : type === 'reject' ? 'doing' : col
         if (!to) throw new HttpError(400, 'col required')
         const text = type === 'accept' ? '你验收通过' : type === 'reject' ? '你打回' : '你拖拽移动'

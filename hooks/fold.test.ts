@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { boardForWeek, dayLabel, fold, resolveTheme, sessionTitle, weeksBack } from './register.tsx'
-import { staleTitles } from './core.ts'
+import { archivedCanceled, keepTo, restoreTo, staleTitles } from './core.ts'
 
 const NOW = new Date(2026, 9, 3, 15).getTime() // Sat 2026-10-03, week starts Mon 09-28
 const H = 3_600_000
@@ -203,4 +203,31 @@ test('init plan: keys follow the logs, status lands as a move, linked sessions a
   // Rerun: nothing new.
   expect(planInit(plan, [...evs, ...r.evs], rows, NOW).evs).toEqual([])
   expect(planInit({ tickets: [{ project: 'NOPE', title: 'x', title_en: 'x', col: 'todo', sids: ['zz'] }] } as any, evs, rows, NOW).err.length).toBe(2)
+})
+
+// WB-28: a proposal lives until the next move; the person's cancel says who and why; 恢复 goes back to where it was.
+test('fold: cancel proposal, the person cancel line, restore target, archived canceled', async () => {
+  const evs: any[] = [
+    { t: NOW - 5 * H, sid: 's1', k: 'create', key: 'SVC-1', project: 'SVC', title: 'A', col: 'follow' },
+    { t: NOW - 4 * H, sid: 's1', k: 'move', key: 'SVC-1', col: 'decide', text: 'Claude 建议取消' },
+    { t: NOW - 4 * H + 1, sid: 's1', k: 'meta', key: 'SVC-1', meta: { proposeCancel: { reason: '重复', from: 'follow' } } },
+    { t: NOW - 10 * 24 * H, sid: 's1', k: 'create', key: 'ME-1', project: 'ME', title: 'old', col: 'doing' },
+    { t: NOW - 10 * 24 * H + 1, sid: 's1', k: 'move', key: 'ME-1', col: 'canceled', by: 'me', text: '' },
+  ]
+  const one = (b: ReturnType<typeof fold>) => b.tickets.find(t => t.key === 'SVC-1')!
+  let tk = one(fold(evs, [], NOW))
+  expect([tk.col, tk.proposeCancel, keepTo(tk)]).toEqual(['decide', { reason: '重复', from: 'follow' }, 'follow'])
+  evs.push({ t: NOW - 3 * H, sid: 'web', k: 'move', key: 'SVC-1', col: 'canceled', by: 'me', text: '重复' })
+  const b = fold(evs, [], NOW)
+  tk = one(b)
+  // the proposal is settled; 恢复 skips 等我拍板 and goes back to the column Claude's proposal came from
+  expect([tk.col, tk.proposeCancel, restoreTo(tk)]).toEqual(['canceled', undefined, 'follow'])
+  expect(b.feed[0].text).toBe('你取消了「A」：重复')
+  expect(fold(evs, [], NOW, 'en').feed[0].text).toBe('You canceled "A": 重复')
+  // a plain cancel goes back to the column it left; none known = todo
+  expect(restoreTo(one(fold([evs[0], { t: NOW - H, sid: 's1', k: 'move', key: 'SVC-1', col: 'canceled', by: 'me' }], [], NOW)))).toBe('follow')
+  expect(keepTo({ ...tk, proposeCancel: { reason: 'x' } })).toBe('todo')
+  // ME-1 was canceled 10 days ago: off the board, but in the search pool
+  expect(b.tickets.map(t => t.key)).toEqual(['SVC-1'])
+  expect(archivedCanceled(evs, b).map(t => t.key)).toEqual(['ME-1'])
 })
