@@ -18,7 +18,7 @@ Features:
 - The theme follows the Claude desktop app (or is fixed to light / dark).
 - A local web app on `127.0.0.1:4790` with the same board.
 
-License: TBD.
+License: [MIT](LICENSE).
 
 ## Requirements
 
@@ -191,3 +191,7 @@ cc-taskboard is the renamed weekly-board plugin.
 - Settings: point `CLAUDE_CODE_PLUGIN_DIRS` at the cc-taskboard folder instead of the weekly-board one. Do not load both: they would both track every session.
 - Restart running sessions: a session registers the tool when it starts, so a session started before the switch still has the old tool. Stop a web app started by the old plugin (`pkill -f weekly-board/web/server.ts`) so the new one can start on port 4790.
 - Your language and theme choices are kept in the plugin's own store, which is per plugin name; you may need to pick them again.
+
+## Acknowledgements
+
+Special thanks to [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) by chuspeeism, a task board for Codex and DeepSeek Harness. Its idea of linking every task to the agent session that works on it, and of keeping the board as a panel of its own next to the sessions, inspired cc-taskboard. cc-taskboard shares no code with it.

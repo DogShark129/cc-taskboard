@@ -18,7 +18,7 @@ cc-taskboard 是一个 Claude Code 插件：在你所有的 Claude Code 会话�
 - 主题跟随 Claude 桌面 app（也可固定浅色 / 深色）。
 - 本地网页版，地址 `127.0.0.1:4790`，同一块看板。
 
-许可证：待定（TBD）。
+许可证：[MIT](LICENSE)。
 
 ## 环境要求
 
@@ -191,3 +191,7 @@ cc-taskboard 就是改了名的 weekly-board 插件。
 - 设置：把 `CLAUDE_CODE_PLUGIN_DIRS` 指向 cc-taskboard 目录，而不是 weekly-board 目录。不要两个都加载，否则两份插件都会追踪每个会话。
 - 重启正在运行的会话：会话在启动时注册工具，切换前启动的会话里仍是旧工具。停掉旧插件启动的网页版（`pkill -f weekly-board/web/server.ts`），新插件才能在 4790 端口启动自己的。
 - 语言和主题的选择存在插件自己的 store 里，按插件名区分，可能需要重新选一次。
+
+## 特别感谢
+
+特别感谢 chuspeeism 的 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard)，一个支持 Codex 和 DeepSeek Harness 的任务面板。它把每个任务和处理它的 agent 会话关联起来、让看板作为独立面板放在会话旁边的思路，启发了 cc-taskboard。cc-taskboard 没有使用它的代码。
