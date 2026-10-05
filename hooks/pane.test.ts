@@ -463,26 +463,24 @@ test('narrow inline preview: open under the row, fold again, comment, status Sel
   await ui.unmount()
 })
 
-// Wide: the preview is an absolute popup over the list; another title switches it, the x closes it.
+// Wide: no popup either (WB-32); the preview opens inline under its row, another title opens its own, the same title folds it.
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`wide popup preview on ${surface}: opens, switches, closes`, async ($: any, on: any) => {
+  test(`wide inline preview on ${surface}: opens, switches, folds`, async ($: any, on: any) => {
     await seed($, on, surface)
     const ui = await $.ui.mount(PANE(surface, 140))
     await ui.press({ key: 'open-SVC-1' })
-    const pop = await byKey(ui, 'peek-pop')
-    expect([pop.props.position, pop.props.borderStyle, pop.props.left, pop.props.right]).toEqual(['absolute', 'round', 2, 2])
-    expect(await ui.find({ key: 'pv-SVC-1' })).toBeUndefined()
+    expect(await ui.find({ key: 'peek-pop' })).toBeUndefined()
+    const kids = (await byKey(ui, 'sec-doing')).children.map((c: any) => c.props?.key)
+    expect(kids.indexOf('pv-SVC-1')).toBe(kids.indexOf('row-SVC-1') + 1)
     expect(await ui.find({ key: 'peek-status' })).toBeDefined()
     expect(await ui.find({ key: 'peek-comment' })).toBeDefined()
     expect(await ui.find({ key: 'peek-cancel' })).toBeDefined()
-    expect(JSON.stringify(pop.children[0])).toContain('"SVC 重写"," / "]},{"type":"Text","props":{"bold":true,"color":"#8394e6"},"children":["SVC-1"]')
     expect(await ui.find({ key: 'back' })).toBeUndefined()
-    await ui.press({ key: 'open-SVC-1' }) // pressing it again keeps it open
-    expect(await ui.find({ key: 'peek-pop' })).toBeDefined()
     await ui.press({ key: 'open-ME-1' }) // another row switches it
-    expect(JSON.stringify((await byKey(ui, 'peek-pop')).children[0])).toContain('"ME-1"')
-    await ui.press({ key: 'peek-close' })
-    expect(await ui.find({ key: 'peek-pop' })).toBeUndefined()
+    expect(await ui.find({ key: 'pv-SVC-1' })).toBeUndefined()
+    expect(await ui.find({ key: 'pv-ME-1' })).toBeDefined()
+    await ui.press({ key: 'open-ME-1' }) // the same title folds it
+    expect(await ui.find({ key: 'pv-ME-1' })).toBeUndefined()
     await ui.press({ key: 'open-ME-1' })
     await ui.press({ key: 'peek-open' })
     expect(await ui.find({ type: 'Text', text: 'ME-1' })).toBeDefined()
@@ -492,7 +490,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-// en mode: the popup with the comment input has no Han.
+// en mode: the preview with the comment input has no Han.
 test('en mode: the preview with the comment input has no Chinese', async ($: any, on: any) => {
   on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
   memfs(on)
@@ -504,7 +502,7 @@ test('en mode: the preview with the comment input has no Chinese', async ($: any
     await ui.press({ key: 'open-SVC-1' })
     expect(JSON.stringify(await ui.drawn())).toContain('Add a comment')
     await noHan(ui)
-    await ui.press({ key: cols > 100 ? 'peek-close' : 'open-SVC-1' })
+    await ui.press({ key: 'open-SVC-1' })
     await ui.press({ key: 'lang' })
     await ui.unmount()
   }
@@ -522,7 +520,7 @@ test('past week: the preview is read-only', async ($: any, on: any) => {
     expect(await ui.find({ key: 'wk-prev' })).toBeUndefined() // only one week back
     expect(await ui.find({ type: 'Text', text: /历史周只读/ })).toBeDefined()
     await ui.press({ key: 'open-SVC-1' })
-    expect(await ui.find({ key: cols > 100 ? 'peek-pop' : 'pv-SVC-1' })).toBeDefined()
+    expect(await ui.find({ key: 'pv-SVC-1' })).toBeDefined()
     for (const key of ['peek-status', 'peek-priority', 'peek-comment', 'peek-cancel', 'peek-mv-todo']) expect(await ui.find({ key })).toBeUndefined()
     expect(await ui.find({ key: 'peek-open' })).toBeDefined()
     await ui.press({ key: 'peek-open' })
@@ -546,7 +544,7 @@ async function themed($: any, on: any, config: string | null, appearance = 'Ligh
   await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'create', title: '[T-42] 登录页面' })
   const ui = await $.ui.mount(PANE('desktop', 140))
   await ui.press({ key: 'open-SVC-1' })
-  const bg = async () => (await byKey(ui, 'peek-pop')).props.backgroundColor
+  const bg = async () => (await byKey(ui, 'pv-SVC-1')).props.backgroundColor
   return { ui, bg, files }
 }
 for (const [mode, own, other] of [['light', LIGHT, DARK], ['dark', DARK, LIGHT]] as const) {
@@ -983,19 +981,17 @@ test('WB-28: Claude cancel lands in decide with a reason; the person keeps, conf
   expect((await ui.find({ key: 'peek-confirm' }))?.props.label).toBe('确认取消')
   await ui.press({ key: 'peek-keep' })
   expect(log()).toContain('"key":"SVC-1","col":"follow","text":"你保留"')
-  expect(await ui.find({ key: 'peek-confirm' })).toBeUndefined() // the move cleared the proposal; the popup stays on its new state
+  expect(await ui.find({ key: 'peek-confirm' })).toBeUndefined() // the move cleared the proposal; the preview stays on its new state
   expect(await ui.find({ type: 'Text', text: '建议取消' })).toBeUndefined()
   // proposed again (note as the reason); 确认取消 cancels with Claude's reason
   await c({ action: 'update', key: 'SVC-1', col: 'canceled', note: '重复了' })
   await ui.press({ key: 'peek-confirm' })
   expect(log()).toContain('"key":"SVC-1","col":"canceled","by":"me","text":"重复了"')
-  await ui.press({ key: 'peek-close' })
   // canceled folds like done: the fold Button, no row until opened
   expect(await ui.find({ key: 'open-SVC-1' })).toBeUndefined()
   await ui.press({ key: 'fold-canceled' })
   expect(await ui.find({ key: 'open-SVC-1' })).toBeDefined()
-  // its preview: 恢复 sends it back to the column it left before the proposal
-  await ui.press({ key: 'open-SVC-1' })
+  // its preview, still open under the row: 恢复 sends it back to the column it left before the proposal
   await ui.press({ key: 'peek-restore' })
   expect(log()).toContain('"key":"SVC-1","col":"follow","text":"你恢复"')
   // the feed says who canceled what, and why
@@ -1053,7 +1049,7 @@ for (const cols of [140, 60]) {
     await ui.press({ key: 'open-SVC-1' })
     await ui.select({ key: 'peek-status', value: 'canceled' })
     expect(files.get(LOG)).toContain('"key":"SVC-1","col":"canceled","by":"me","text":""')
-    expect(await ui.find({ key: cols > 100 ? 'peek-pop' : 'pv-SVC-1' })).toBeUndefined()
+    expect(await ui.find({ key: 'pv-SVC-1' })).toBeUndefined()
     expect(await sections(ui)).toEqual(['sec-canceled']) // opened below the fold row, where it now is
     await ui.unmount()
   })
@@ -1095,6 +1091,7 @@ test('preview: go to session opens claude://claude.ai/epitaxy/<local id>, skippi
     await ui.press({ key: 'open-SVC-1' })
     await ui.press({ key: 'peek-jump' })
     expect(opened.at(-1)).toEqual(['open', 'claude://claude.ai/epitaxy/local_old-1'])
+    await ui.press({ key: 'open-SVC-1' }) // fold it: the view outlives the mount
     await ui.unmount()
   }
   // archived in the app: nothing opens (a toast says so)

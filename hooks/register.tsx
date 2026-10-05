@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Board, Col, Lang, Priority, Resolved, Sess, Ticket, View } from '../types'
 import {
-  BAD, BORDER, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
+  BAD, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
   LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
 import type { Ev, InitPlan, K, ScanRow } from './core.ts'
@@ -37,10 +37,6 @@ const t = (key: K, ...args: (string | number)[]) => tl(lang, key, ...args)
 // The pane always follows the Claude app's theme (its config.json, else the OS): the app draws the pane background and every Button label
 // in its own theme, so a theme of the plugin's own would put light text on a light tint (WB-29). The web UI keeps its own switch.
 let resolved: Resolved = 'light'
-const PALETTE: Record<Resolved, { bg: string; fg: string; border: string; mute: string }> = {
-  dark: { bg: '#262624', fg: '#dde2ea', border: '#4a5263', mute: '#8b93a3' },
-  light: { bg: '#f4f3ef', fg: '#1f2a44', border: '#c9d1de', mute: '#6b7385' },
-}
 // The board's surface colors per theme: row tint (hover, open preview; warm grey in the app's own hue, Fan picked it), text levels, accent, live (a session is working it).
 const SURFACE: Record<Resolved, { tint: string; text: string; sub: string; mute: string; accent: string; live: string }> = {
   light: { tint: '#f4f3ef', text: '#1f2a44', sub: '#5b6478', mute: '#8b93a3', accent: '#5b6cf0', live: '#3f9a6b' },
@@ -203,7 +199,7 @@ async function emit($: $, ev: Omit<Ev, 't' | 'sid'>) {
   await refresh($)
 }
 
-// The person's comment, from the detail or the preview (inline or popup): one event, which also wakes the ticket's session.
+// The person's comment, from the detail or the inline preview: one event, which also wakes the ticket's session.
 const sendComment = ($: $, key: string, text: string) => (text.trim() ? emit($, { k: 'comment', key, by: 'me', text: text.trim() }) : undefined)
 
 const current = (): Ticket | undefined => (me.ticket ? findTicket(fold(all, [], Date.now()).tickets, me.ticket) : undefined)
@@ -780,7 +776,6 @@ export const register: Register = on => {
       .map(id => b.sessions.find(x => x.sid === id) ?? { sid: id, cwd: '', name: id.slice(0, 6), project: null, seen: 0, state: 'idle' as const, isGone: true })
       .sort((x, y) => y.seen - x.seen)
     const findShown = (key?: string | null) => (key ? b.tickets.find(x => x.key === key) ?? archived().find(x => x.key === key) : undefined)
-    const peekTk = findShown(v.peek) // a ticket that is gone shows nothing
 
     // ----- detail -----
     const sel = findShown(v.sel)
@@ -1080,8 +1075,8 @@ export const register: Register = on => {
       </Box>
     ) : null
 
-    // The preview of one ticket: inline under its row (narrow) or in the popup over the list (wide). Past weeks are read-only.
-    const preview = (tk: Ticket, c: { fg?: string; mute: string }, popup: boolean) => {
+    // The preview of one ticket, inline under its row at every width (WB-32: an absolute popup got clipped by a short list). Past weeks are read-only.
+    const preview = (tk: Ticket, c: { fg?: string; mute: string }) => {
       const desc = descOf(tk, lang) ? plain(descOf(tk, lang)) : tk.notes.map(n => `- ${plain(n).join(' ')}`)
       const toCol = async (to: string) => {
         if (to === tk.col) return
@@ -1132,7 +1127,7 @@ export const register: Register = on => {
           {wk || !els.Input ? null : <els.Input key="peek-comment" placeholder={t('peek.cmt.ph')} submitLabel={t('peek.send')} onSubmit={(text: string) => void sendComment($, tk.key, text)} />}
         </Box>,
         <Text key="pv-foot" color={c.mute}>
-          {t('peek.created', md(tk.created))} · {t('peek.updated', ago(lang, tk.log.at(-1)?.t ?? tk.created, now))}{popup ? '' : ` · ${t('peek.fold')}`}
+          {t('peek.created', md(tk.created))} · {t('peek.updated', ago(lang, tk.log.at(-1)?.t ?? tk.created, now))} · {t('peek.fold')}
         </Text>,
       ]
     }
@@ -1157,21 +1152,21 @@ export const register: Register = on => {
       const room = width - 2 - (showProj ? 5 : 0) - right.reduce((n, r) => n + cells(r.text) + 1, 0) - 4
       const open = v.peek === tk.key
       const line = (
-        <Box key={`row-${tk.key}`} gap={1} backgroundColor={!wide && open ? surf.tint : undefined} hover={{ backgroundColor: surf.tint }}>
+        <Box key={`row-${tk.key}`} gap={1} backgroundColor={open ? surf.tint : undefined} hover={{ backgroundColor: surf.tint }}>
           {showProj ? <Box width={4} flexShrink={0}><Text bold color={pc} wrap="truncate-end">{tk.project}</Text></Box> : null}
           <Box flexGrow={1} flexShrink={1}>
             <Button key={`open-${tk.key}`} plain dimColor={closed} label={clip(code ? `${code} ${rest}` : rest, Math.max(6, room))}
-              onPress={() => setView({ peek: !wide && open ? null : tk.key })} />
+              onPress={() => setView({ peek: open ? null : tk.key })} />
           </Box>
           {right.map((r, i) => <Text key={`r${i}`} color={r.color} inverse={r.pill} bold={r.pill}>{r.text}</Text>)}
         </Box>
       )
-      if (wide || !open) return [line]
+      if (!open) return [line]
       return [
         line,
         <Box key={`pv-${tk.key}`} flexDirection="column" backgroundColor={surf.tint} paddingX={1}>
           <Text bold>{code ? `${code} ` : ''}{rest}</Text>
-          {preview(tk, { mute: surf.mute }, false)}
+          {preview(tk, { mute: surf.mute })}
         </Box>,
       ]
     }
@@ -1210,18 +1205,6 @@ export const register: Register = on => {
         {els.Link ? <els.Link key="web-link" href={WEB_LINK} label={t('w.link')} /> : null}
       </Box>
     )
-    const pal = PALETTE[v.themeResolved ?? resolved]
-    const popup = wide && peekTk ? (
-      <Box key="peek-pop" position="absolute" top={0} left={2} right={2} flexDirection="column" borderStyle="round" borderColor={BORDER} backgroundColor={pal.bg} paddingX={1}>
-        <Box justifyContent="space-between" gap={1}>
-          <Text><Text color={pal.mute}>{pn(peekTk.project)} / </Text><Text bold color={projOf(peekTk.project)?.color ?? MUTE}>{peekTk.key}</Text></Text>
-          <Button key="peek-close" plain label="×" onPress={() => setView({ peek: null })} />
-        </Box>
-        <Text bold color={pal.fg}>{titleOf(peekTk, lang)}</Text>
-        {preview(peekTk, { fg: pal.fg, mute: pal.mute }, true)}
-      </Box>
-    ) : null
-
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
         {header}
@@ -1243,7 +1226,6 @@ export const register: Register = on => {
               : <Text color={MUTE}>{t(filtered ? 'empty.filter' : wk ? 'empty.past' : 'empty.week')}</Text>}
             {foldRow}
             {FOLDS.filter(openOf).map(c => section(c))}
-            {popup}
           </Box>
         )}
       </Box>

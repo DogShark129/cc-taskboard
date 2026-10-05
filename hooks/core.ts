@@ -173,7 +173,6 @@ export const MUTE = '#8b93a3'
 export const OK = '#62b38a'
 export const WARN = '#cfa255'
 export const BAD = '#d9777a'
-export const BORDER = '#7a8294'
 // Closed = done or canceled: no longer blocks anything, no due-date alarm.
 export const isOpen = (t?: Ticket) => !!t && t.col !== 'done' && t.col !== 'canceled'
 // Blockers still open; ones archived off the board (closed in an earlier week) don't count.
