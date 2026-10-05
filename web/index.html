@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --canvas:#f5f7fb; --col:#eef2f8; --card:#ffffff; --line:#e4e9f2; --line2:#d5dce8;
+  --text:#1f2a44; --sub:#64708a; --mute:#8b94a8;
+  --accent:#5b72e6; --accent-bg:#eef1ff; --bad:#d9777a; --ok:#4fa27c; --warn:#b98a2f;
+  --shadow:0 8px 28px rgba(31,42,68,.12); --backdrop:rgba(20,26,40,.35); --radius:10px;
+}
+/* set from script: follows the Claude app (server appTheme) unless the header toggle picked one */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#171c26; --canvas:#12161e; --col:#1b212c; --card:#1e2531; --line:#2a3240; --line2:#364052;
+  --text:#dde2ea; --sub:#9aa6bd; --mute:#74809a;
+  --accent:#8394e6; --accent-bg:#232a47; --bad:#d9777a; --ok:#62b38a; --warn:#cfa255;
+  --shadow:0 8px 28px rgba(0,0,0,.45); --backdrop:rgba(5,8,14,.6);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--canvas);color:var(--text);font:14px/1.5 Inter,"PingFang SC","Hiragino Sans GB",-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+code{font:12px ui-monospace,"SF Mono",Menlo,monospace;background:var(--col);padding:1px 5px;border-radius:4px}
+pre{background:var(--col);border-radius:8px;padding:10px 12px;overflow:auto;margin:8px 0}
+pre code{background:none;padding:0}
+.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+.i.sm{width:13px;height:13px;vertical-align:-2px}
+.app{display:flex;height:100vh;min-height:0}
+
+/* sidebar */
+.projects{width:216px;flex:none;border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:2px;background:var(--bg);overflow-y:auto}
+.projects .h{font-size:11px;font-weight:600;color:var(--mute);padding:6px 10px;letter-spacing:.06em;text-transform:uppercase}
+.pj{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;user-select:none}
+.pj:hover{background:var(--canvas)}
+.pj.on{background:var(--accent-bg);color:var(--accent)}
+.pj .c{margin-left:auto;font-size:12px;color:var(--mute);font-weight:500}
+.pj .w{font-size:11px;background:var(--bad);color:#fff;border-radius:10px;padding:0 6px;font-weight:600;line-height:17px}
+.tile{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent)}
+.tile .i{width:14px;height:14px}
+.tile.s{width:22px;height:22px;border-radius:6px}
+
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+header{padding:16px 24px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+.crumb{font-size:12px;color:var(--mute);display:flex;gap:6px;align-items:center}
+.titlerow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+.sp{flex:1}
+.btn{border:none;background:var(--canvas);color:var(--text);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.btn:hover{background:var(--col)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:none;color:var(--sub);padding:5px 8px}
+.btn.ghost:hover{background:var(--canvas)}
+.meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--sub);padding:0 0 12px;align-items:center}
+.meta span{display:inline-flex;gap:5px;align-items:center}
+.live-row{display:flex;gap:8px;flex-wrap:wrap;padding:0 0 12px}
+.live-row .s{border:1px solid var(--line);border-radius:20px;padding:2px 10px 2px 8px;font-size:12px;display:inline-flex;gap:6px;align-items:center;color:var(--sub)}
+.live-row .s b{color:var(--text);font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none;display:inline-block}
+.dot.pulse{animation:p 1.8s infinite}
+.dot.wait{background:var(--warn)}
+@keyframes p{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 50%,transparent)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.toolbar{display:flex;gap:8px;align-items:center;padding:12px 24px;flex-wrap:wrap}
+.search{display:flex;align-items:center;gap:6px;border:1.5px solid var(--line);border-radius:8px;padding:5px 10px;width:220px;color:var(--mute);background:var(--bg)}
+.search:focus-within{border-color:var(--accent)}
+.search input{border:none;outline:none;background:none;width:100%;font-size:13px}
+.chip{border:1.5px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;background:var(--bg);color:var(--sub);font-weight:500;display:inline-flex;gap:6px;align-items:center}
+.chip.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.seg{display:inline-flex;background:var(--col);border-radius:8px;padding:2px}
+.seg button{border:none;background:none;border-radius:6px;padding:4px 12px;font-size:13px;font-weight:500;color:var(--sub);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.seg button.on{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+#view{flex:1;min-height:0;overflow:auto;padding:4px 24px 24px}
+.banner{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--text);font-size:12px;padding:4px 24px}
+
+/* lozenges */
+.lz{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:0 7px;border-radius:5px;line-height:19px;white-space:nowrap;background:color-mix(in srgb,var(--c) 18%,transparent);color:color-mix(in srgb,var(--c) 72%,var(--text))}
+
+/* board */
+.lane+.lane{margin-top:22px}
+.lane .lh{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;padding:8px 0 10px;cursor:pointer;flex-wrap:wrap;user-select:none}
+.lane .lh .sub{font-weight:400;font-size:12px;color:var(--mute)}
+.lane .lh .i.fold{transition:transform .15s;color:var(--mute)}
+.lane.closed .lh .i.fold{transform:rotate(-90deg)}
+.lane .sum{font-weight:400;font-size:12px;color:var(--mute);display:flex;gap:10px}
+.cols{display:flex;gap:12px;align-items:flex-start}
+.col{flex:1 1 0;min-width:176px;display:flex;flex-direction:column}
+.colh{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:12px;font-weight:600;color:var(--sub);letter-spacing:.02em}
+.colh .i{width:14px;height:14px;color:var(--c)}
+.colh .n{color:var(--mute);font-weight:500}
+.cards{display:flex;flex-direction:column;gap:8px;min-height:84px;padding:6px;border-radius:12px;background:var(--col);transition:background .12s,outline-color .12s;outline:2px dashed transparent;outline-offset:-2px}
+.cards.over{outline-color:var(--accent);background:var(--accent-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 11px;cursor:pointer;font-size:13px;position:relative}
+.card:hover{border-color:var(--accent)}
+.card[draggable=true]{cursor:grab}
+.card.dragging{opacity:.4}
+.card.live{box-shadow:inset 3px 0 0 var(--ok)}
+.card .t{font-weight:500;line-height:1.45;margin-bottom:9px;word-break:break-word}
+.card.done .t{color:var(--mute)}
+.foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--mute)}
+.foot .key{font-weight:600;letter-spacing:.02em}
+.foot .mt,.foot .pr,.foot .lv{display:inline-flex;gap:3px;align-items:center}
+.foot .lv{color:var(--ok);font-weight:600}
+.foot .pr{color:var(--ok)}
+.foot .age{color:var(--warn);font-weight:600}
+.foot .age.hot{color:var(--bad)}
+.foot .age.calm{color:var(--mute);font-weight:500}
+.foot .blk{color:var(--bad);font-weight:600}
+.card .tags{font-size:11px;color:var(--mute);margin:-5px 0 8px}
+.rel{cursor:pointer;color:var(--accent)}
+.empty-note{padding:40px 0;text-align:center;color:var(--mute)}
+
+/* feed */
+.ev{display:grid;grid-template-columns:78px 72px 76px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:baseline}
+.ev .tm{color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
+.ev .k{font-weight:600;color:var(--accent);cursor:pointer}
+.ev .who{color:var(--mute);font-size:12px}
+
+/* detail */
+.dhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 6px;font-size:13px;color:var(--sub)}
+.dhead .key{font-weight:600}
+.dtitle{font-size:22px;font-weight:700;letter-spacing:-.01em;margin:4px 0 16px;line-height:1.35}
+.dgrid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+.dside{display:flex;flex-direction:column;gap:18px;position:sticky;top:0}
+.sec{margin-bottom:22px}
+.sec h4{margin:0 0 8px;font-size:12px;color:var(--sub);font-weight:600;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.md h3,.md h4,.md h5{margin:12px 0 6px;font-weight:600}
+.md h3{font-size:16px}.md h4{font-size:14px}.md h5{font-size:13px}
+.md p{margin:4px 0}.md ul,.md ol{margin:4px 0;padding-left:20px}
+.muted{color:var(--mute)}
+textarea,.sel{width:100%;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:13px;outline:none}
+textarea{resize:vertical;min-height:72px}
+textarea:focus,.sel:focus,.fld input:focus{border-color:var(--accent)}
+.cm{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.cm .by{font-weight:600}.cm .by.me{color:var(--accent)}.cm .tm{color:var(--mute);font-size:12px;margin-left:6px}
+.cm .tx{white-space:pre-wrap;margin-top:2px;word-break:break-word}
+.add{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-bottom:8px}
+.notes{margin:0;padding-left:18px}.notes li{margin:3px 0}
+.act{display:flex;gap:10px;font-size:12px;padding:4px 0;color:var(--sub)}
+.act .tm{color:var(--mute);width:42px;flex:none;font-variant-numeric:tabular-nums}
+.kv{display:grid;grid-template-columns:76px 1fr;gap:8px;font-size:13px;padding:5px 0;align-items:baseline}
+.kv>span:first-child{color:var(--mute)}
+.kv>span:last-child{min-width:0;word-break:break-all}
+.ss{display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0}
+.ss .st{color:var(--mute);font-size:12px}
+.review-box{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg);display:flex;flex-direction:column;gap:10px}
+.review-box .row{display:flex;gap:8px;flex-wrap:wrap}
+.hint{font-size:12px;color:var(--mute);line-height:1.6}
+
+/* dialogs */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--text);padding:0;box-shadow:var(--shadow);width:min(560px,92vw);max-height:86vh;overflow:auto}
+dialog::backdrop{background:var(--backdrop)}
+.dlg{padding:18px 20px}
+.dlg .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dlg h2{font-size:18px;margin:12px 0 10px;line-height:1.4}
+.dlg .sec{margin-bottom:14px}
+.dlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.fld{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;font-size:12px;color:var(--sub);font-weight:600}
+.fld input{border:1.5px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:13px;outline:none;font-weight:400}
+.fld .row{display:flex;gap:10px}.fld .row>*{flex:1}
+#toast{position:fixed;right:20px;bottom:20px;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:12px;font-size:13px;box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;max-width:380px;z-index:50}
+#toast.on{opacity:1;transform:none}
+
+/* peek popup: Jira's issue view */
+#peek{width:min(880px,92vw);max-height:88vh}
+.pk-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px 8px 20px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub)}
+.pk-bar b{font-weight:700}
+.pk-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;padding:18px 20px 12px}
+.pk-title{font-size:22px;font-weight:700;letter-spacing:-.01em;line-height:1.35;margin:0 0 14px;word-break:break-word}
+.pk-acts{display:flex;gap:8px;margin-bottom:18px}
+.pk-desc{max-height:12em;overflow:hidden}
+.pk-desc.fade{-webkit-mask-image:linear-gradient(#000 65%,transparent);mask-image:linear-gradient(#000 65%,transparent)}
+.pk-desc>:first-child{margin-top:0}
+.lnk{border:none;background:none;padding:0;color:var(--accent);font-size:13px;cursor:pointer}
+.lnk:hover{text-decoration:underline}
+.pk-side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.pk-status{position:relative;display:block;color:color-mix(in srgb,var(--c) 72%,var(--text))}
+.pk-status select{appearance:none;-webkit-appearance:none;width:100%;border:none;border-radius:8px;padding:7px 32px 7px 12px;font-size:13px;font-weight:600;cursor:pointer;outline:none;color:inherit;background:color-mix(in srgb,var(--c) 20%,transparent)}
+.pk-status select:disabled{cursor:default;opacity:.7}
+.pk-status select:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.pk-status .i{position:absolute;right:10px;top:50%;margin-top:-8px;pointer-events:none}
+.pk-status option,.pk-pri option{background:var(--bg);color:var(--text)}
+.pk-panel{border:1px solid var(--line);border-radius:10px;padding:10px 14px 6px}
+.pk-panel h4{margin:0 0 4px;font-size:12px;color:var(--sub);font-weight:600;letter-spacing:.02em}
+.pk-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px;font-size:13px;padding:5px 0;align-items:center}
+.pk-row>span:first-child{color:var(--mute)}
+.pk-row>div{min-width:0;word-break:break-word}
+.pk-pri{appearance:none;-webkit-appearance:none;border:none;border-radius:5px;padding:0 7px;font-size:11px;font-weight:600;line-height:19px;height:19px;cursor:pointer;outline:none;color:color-mix(in srgb,var(--c) 72%,var(--text));background:color-mix(in srgb,var(--c) 18%,transparent)}
+.pk-pri:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.pk-pri:disabled{cursor:default}
+.tg{display:inline-block;font-size:12px;padding:0 7px;line-height:19px;border-radius:5px;background:var(--col);color:var(--sub);margin:0 4px 2px 0}
+.dv.hot{color:var(--bad)}.dv.warn{color:var(--warn)}.dv.calm{color:var(--mute)}
+.pk-cmt{display:flex;gap:8px;align-items:flex-start;margin-top:10px}
+#pkCmt{flex:1;min-width:0;height:34px;min-height:0;resize:none;overflow:hidden;transition:height .12s}
+#pkCmt:focus{height:84px;overflow:auto}
+.pk-foot{padding:0 20px 14px;font-size:12px;color:var(--mute)}
+@media (max-width:720px){.pk-body{grid-template-columns:1fr;gap:16px}}
+@media (max-width:1000px){.dgrid{grid-template-columns:1fr}.dside{position:static}}
+@media (max-width:760px){
+  .app{flex-direction:column;height:auto;min-height:100vh}
+  .projects{width:auto;flex-direction:row;overflow-x:auto;padding:8px;border-right:none;border-bottom:1px solid var(--line)}
+  .projects .h{display:none}.pj{flex:none}
+  header,.toolbar{padding-left:14px;padding-right:14px}#view{padding:4px 14px 24px;overflow:visible}
+  .cols{flex-direction:column;align-items:stretch}.col{min-width:0}.col.none{display:none}
+  .cards{min-height:48px}
+  .ev{grid-template-columns:64px 64px 1fr}.ev .who{grid-column:2/-1}
+  .search{width:100%}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M17 3v3.5a5 5 0 0 1-2 4L12 12l-3-1.5a5 5 0 0 1-2-4V3M7 21v-3.5a5 5 0 0 1 2-4L12 12l3 1.5a5 5 0 0 1 2 4V21"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 8L9 4l-3 8H2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16 9.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M2 12h6.5M15.5 12H22"/></symbol>
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-4M13 4.5 10.5 7 13 9.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevron-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chevron-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 3.5 12.9 8l4.6 1.9-4.6 1.9L11 16.4l-1.9-4.6L4.5 9.9 9.1 8z"/><path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.6 18.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3M7 15h10"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5.5 9.5V20h13V9.5"/></symbol>
+</svg>
+
+<div class="app">
+  <nav class="projects" id="side"></nav>
+  <div class="main">
+    <div id="banner"></div>
+    <header id="head"></header>
+    <div class="toolbar" id="tool"></div>
+    <div id="view"></div>
+  </div>
+</div>
+<dialog id="peek"></dialog>
+<dialog id="newDlg"></dialog>
+<div id="toast"></div>
+
+<script>
+'use strict'
+const $ = s => document.querySelector(s)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+// Same rule as clean() in hooks/core.ts: imported notes carry emoji, the flat style has none.
+const EMOJI = /\p{Extended_Pictographic}️|\p{Emoji_Presentation}|[️⃣]/gu
+const clean = s => String(s ?? '').replace(EMOJI, '').replace(/\s{2,}/g, ' ').trim()
+const splitCode = title => {
+  const m = clean(title).match(/^\[([^\]]+)\]\s*(.*)$/)
+  return m ? { code: `[${m[1]}]`, rest: m[2] || m[1] } : { code: '', rest: clean(title) }
+}
+const ic = (n, c = '') => `<svg class="i ${c}"><use href="#i-${n}"/></svg>`
+const DAY = 86400000
+const pad = n => String(n).padStart(2, '0')
+const md = t => { const d = new Date(t); return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+const hhmm = t => new Date(t).toTimeString().slice(0, 5)
+const ago = (ms, now) => {
+  const m = Math.max(0, Math.floor((now - ms) / 60000))
+  return m < 1 ? t('ago.now') : m < 60 ? t('ago.min', m) : m < 1440 ? t('ago.hour', Math.floor(m / 60)) : t('ago.day', Math.floor(m / 1440))
+}
+const isoWeek = ms => {
+  const d = new Date(ms); d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
+  const w1 = new Date(d.getFullYear(), 0, 4)
+  return 1 + Math.round(((d.getTime() - w1.getTime()) / DAY - 3 + ((w1.getDay() + 6) % 7)) / 7)
+}
+
+const S = {
+  lang: localStorage.getItem('wb.lang') === 'en' ? 'en' : 'zh',
+  theme: ['light', 'dark'].includes(localStorage.getItem('wb.theme')) ? localStorage.getItem('wb.theme') : 'auto', week: 0, proj: 'ALL', tab: 'board', q: '', me: false, live: false,
+  collapsed: new Set(JSON.parse(localStorage.getItem('wb.collapsed') || '[]')), sel: null, peek: null, editing: null, D: null, offline: false,
+}
+const t = (k, ...a) => (S.D?.i18n[k] ?? k).replace(/\{(\d)\}/g, (_, i) => a[Number(i)])
+const ro = () => S.week > 0
+const projOf = id => S.D.projects.find(p => p.id === id)
+const colOf = id => S.D.cols.find(c => c.id === id) ?? S.D.cols[1]
+const prioColor = p => S.D.priorities.find(x => x.id === p)?.color ?? 'var(--mute)'
+const lz = (text, color) => `<span class="lz" style="--c:${color}">${esc(text)}</span>`
+const tickets = () => S.D.board.tickets
+const findTicket = key => tickets().find(x => x.key === key || (x.aliases || []).includes(key))
+const sessions = () => S.D.board.sessions
+const isLive = tk => sessions().some(s => s.ticket === tk.key && s.state !== 'idle')
+const sessName = id => { if (id === 'web') return t('w.link'); const x = sessions().find(s => s.sid === id); return x ? x.label || x.name : id.slice(0, 6) }
+const sessState = x => (x.isGone ? t('ss.gone') : x.state === 'run' ? t('ss.run') : x.state === 'wait' ? t('waiting.you') : t('ss.idle'))
+const projName = id => projOf(id)?.name ?? id
+const colName = c => (S.lang === 'en' ? c.name.toUpperCase() : c.name)
+// Same rules as hooks/core.ts: done / canceled tickets stop blocking and stop counting down.
+const isOpen = tk => !!tk && tk.col !== 'done' && tk.col !== 'canceled'
+const openBlockers = tk => (tk.blockedBy || []).filter(k => isOpen(tickets().find(x => x.key === k)))
+const dueIn = tk => (tk.due && isOpen(tk) ? Math.round((new Date(`${tk.due}T00:00`).getTime() - new Date(S.D.asOf).setHours(0, 0, 0, 0)) / DAY) : null)
+const dueClass = n => (n < 0 ? 'hot' : n <= 2 ? '' : 'calm')
+const tagText = tk => (tk.labels || []).map(l => `#${l}`).join(' ')
+
+// Theme: auto = the Claude app's (server appTheme), else the header toggle's pick. Light until the first load answers.
+const applyTheme = () => { document.documentElement.dataset.theme = S.theme === 'auto' ? S.D?.appTheme ?? 'light' : S.theme }
+applyTheme()
+
+// ---------- data ----------
+let seq = 0
+async function load() {
+  const my = ++seq
+  const r = await fetch(`/api/board?week=${S.week}&lang=${S.lang}`)
+  const d = await r.json()
+  if (my !== seq) return
+  S.D = d
+  S.week = d.week
+  applyTheme()
+  document.documentElement.lang = S.lang
+  document.title = t('pane.title')
+  render()
+}
+async function post(body) {
+  const r = await fetch('/api/action', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cc-taskboard': '1' }, body: JSON.stringify(body) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j.error || r.status)
+  return j
+}
+async function run(body, after) {
+  try { const j = await post(body); await load(); after?.(j) } catch (e) { toast(t('w.err', e.message)); await load() }
+}
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('on')
+  clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('on'), 2600)
+}
+function move(key, col) {
+  const tk = findTicket(key)
+  if (!tk || tk.col === col || ro()) return
+  tk.col = col; render() // optimistic; load() inside run() settles it
+  run({ type: 'move', key, col })
+}
+
+// ---------- markdown (minimal: headings, lists, code, bold) ----------
+function mdHtml(src) {
+  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+  const out = []
+  let list = null, code = null
+  const close = () => { if (list) { out.push(`</${list}>`); list = null } }
+  for (const raw of String(src).split('\n')) {
+    const line = raw.replace(EMOJI, '')
+    if (/^\s*```/.test(line)) {
+      if (code === null) { close(); code = [] } else { out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`); code = null }
+      continue
+    }
+    if (code !== null) { code.push(line); continue }
+    let m
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { close(); const n = Math.min(m[1].length + 2, 5); out.push(`<h${n}>${inline(m[2])}</h${n}>`) }
+    else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) { if (list !== 'ul') { close(); out.push('<ul>'); list = 'ul' } out.push(`<li>${inline(m[1])}</li>`) }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { close(); out.push('<ol>'); list = 'ol' } out.push(`<li>${inline(m[1])}</li>`) }
+    else if (!line.trim()) close()
+    else { close(); out.push(`<p>${inline(line)}</p>`) }
+  }
+  if (code !== null) out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`)
+  close()
+  return out.join('')
+}
+const plainLines = src => String(src || '').split('\n').map(l => clean(l.replace(/[*`]/g, '').replace(/^\s*(#+|[-+])\s+/, ''))).filter(Boolean)
+
+// ---------- render ----------
+const projScope = () => tickets().filter(x => S.proj === 'ALL' || x.project === S.proj)
+const scope = () => {
+  const q = S.q.trim().toLowerCase()
+  return projScope().filter(x => (!S.me || x.col === 'decide') && (!S.live || isLive(x)) && (!q || `${x.key} ${x.title}`.toLowerCase().includes(q)))
+}
+let composing = false, pending = false
+function render(fresh) {
+  if (!S.D) return
+  if (composing) { pending = true; return }
+  const view = $('#view'), keepScroll = view.scrollTop
+  const saved = fresh ? [] : [...view.querySelectorAll('textarea[id],input[id]')].map(e => [e.id, e.value])
+  const a = document.activeElement
+  const aid = !fresh && a && view.contains(a) && a.id ? [a.id, a.selectionStart, a.selectionEnd] : null
+  renderSide(); renderHead(); renderTool(); renderView()
+  for (const [id, v] of saved) { const e = document.getElementById(id); if (e) e.value = v }
+  if (aid) { const e = document.getElementById(aid[0]); if (e) { e.focus(); try { e.setSelectionRange(aid[1], aid[2]) } catch {} } }
+  view.scrollTop = keepScroll
+  renderPeek()
+  $('#banner').innerHTML = S.offline ? `<div class="banner">${esc(t('w.offline'))}</div>` : ''
+}
+
+function renderSide() {
+  const T = tickets()
+  const open = id => T.filter(x => (!id || x.project === id) && x.col !== 'done').length
+  $('#side').innerHTML = `<div class="h">${esc(t('crumb'))}</div>` + S.D.projects.map(p => {
+    const wait = T.filter(x => x.project === p.id && x.col === 'decide').length
+    return `<div class="pj ${S.proj === p.id ? 'on' : ''}" data-act="proj" data-id="${p.id}"><span class="tile" style="--c:${p.color}">${ic(p.icon)}</span><span>${esc(p.name)}</span><span class="c">${open(p.id)}</span>${wait ? `<span class="w" title="${esc(t('to.decide', wait))}">${wait}</span>` : ''}</div>`
+  }).join('') + `<div class="pj ${S.proj === 'ALL' ? 'on' : ''}" data-act="proj" data-id="ALL"><span class="tile" style="--c:var(--mute)">${ic('layers')}</span><span>${esc(t('w.lanes'))}</span><span class="c">${open()}</span></div>`
+}
+
+function renderHead() {
+  const b = S.D.board, now = S.D.asOf, wk = S.week
+  const proj = S.proj === 'ALL' ? t('all.projects') : projName(S.proj)
+  const left = Math.floor((b.weekStart + 7 * DAY - now) / DAY)
+  const live = wk ? [] : sessions().filter(s => s.state !== 'idle' && (S.proj === 'ALL' || s.project === S.proj))
+  $('#head').innerHTML = `
+    <div class="crumb">${esc(t('crumb'))} ${ic('chevron-r', 'sm')} ${esc(proj)}</div>
+    <div class="titlerow">
+      <h1>${esc(t('board.title', proj))} <span class="muted">${esc(t('w.wk', pad(isoWeek(now))))}</span></h1>
+      <span class="sp"></span>
+      ${wk < S.D.weeksBack ? `<button class="btn" data-act="wk" data-d="1" title="${esc(t('wk.prev', isoWeek(b.weekStart - DAY)))}">${ic('chevron', 'sm')}${esc(t('wk.prev', isoWeek(b.weekStart - DAY)))}</button>` : ''}
+      ${wk > 0 ? `<button class="btn" data-act="wk" data-d="-1">${esc(t('wk.next', isoWeek(b.weekStart + 8 * DAY)))}${ic('chevron-r', 'sm')}</button>` : ''}
+      ${wk > 1 ? `<button class="btn" data-act="wk" data-d="0">${esc(t('wk.now'))}</button>` : ''}
+      <button class="btn" data-act="theme">${esc(t(`theme.${S.theme}`))}</button>
+      <button class="btn" data-act="lang">${esc(t('lang.btn'))}</button>
+      <button class="btn primary" data-act="new">${ic('plus', 'sm')}${esc(t('w.new'))}</button>
+    </div>
+    <div class="meta">
+      <span>${ic('calendar', 'sm')}${md(b.weekStart)} ~ ${md(b.weekStart + 6.5 * DAY)}${wk ? '' : ` · ${esc(t('left', Math.max(0, left)))}`}</span>
+      <span>${ic('sparkles', 'sm')}${esc(t('stats', b.createdThisWeek, projScope().filter(x => x.col === 'done').length, b.commitsThisWeek))}</span>
+      ${wk ? `<span>${esc(t('week.ro'))}</span>` : ''}
+    </div>
+    ${live.length ? `<div class="live-row">${live.map(s => `<span class="s"><i class="dot ${s.state === 'wait' ? 'wait' : 'pulse'}"></i><b>${esc(s.label || s.name)}</b>${s.ticket ? ` ${esc(s.ticket)}` : ''}${s.state === 'wait' ? ` · ${esc(t('waiting.you'))}` : ''}</span>`).join('')}</div>` : ''}`
+}
+
+function renderTool() {
+  const el = $('#tool')
+  if (S.sel) { el.innerHTML = ''; el.style.display = 'none'; return }
+  el.style.display = ''
+  const q = el.querySelector('#q')
+  if (q) { // keep the search box (and its caret / IME state) across renders; only labels and states change
+    q.placeholder = t('search.ph')
+    el.querySelector('[data-act=fme]').className = `chip ${S.me ? 'on' : ''}`
+    el.querySelector('[data-act=fme] span').textContent = t('qf.me')
+    el.querySelector('[data-act=flive]').className = `chip ${S.live ? 'on' : ''}`
+    el.querySelector('[data-act=flive] span').textContent = t('qf.live')
+    el.querySelector('[data-tab=board] span').textContent = t('tab.board')
+    el.querySelector('[data-tab=feed] span').textContent = t('tab.feed')
+    for (const b of el.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === S.tab)
+    return
+  }
+  el.innerHTML = `
+    <label class="search">${ic('search', 'sm')}<input id="q" placeholder="${esc(t('search.ph'))}" value="${esc(S.q)}" autocomplete="off"></label>
+    <span class="chip ${S.me ? 'on' : ''}" data-act="fme">${ic('hourglass', 'sm')}<span>${esc(t('qf.me'))}</span></span>
+    <span class="chip ${S.live ? 'on' : ''}" data-act="flive"><i class="dot"></i><span>${esc(t('qf.live'))}</span></span>
+    <span class="sp"></span>
+    <div class="seg">
+      <button data-act="tab" data-tab="board" class="${S.tab === 'board' ? 'on' : ''}">${ic('grid', 'sm')}<span>${esc(t('tab.board'))}</span></button>
+      <button data-act="tab" data-tab="feed" class="${S.tab === 'feed' ? 'on' : ''}">${ic('activity', 'sm')}<span>${esc(t('tab.feed'))}</span></button>
+    </div>`
+}
+
+function card(tk) {
+  const { code, rest } = splitCode(tk.title)
+  const age = tk.col === 'done' ? 0 : Math.floor((S.D.asOf - tk.since) / DAY)
+  const live = isLive(tk)
+  return `<article class="card ${tk.col === 'done' ? 'done' : ''} ${live ? 'live' : ''}" draggable="${ro() ? 'false' : 'true'}" data-act="peek" data-key="${tk.key}">
+    <div class="t">${code ? `<b>${esc(code)}</b> ` : ''}${esc(rest)}</div>
+    ${tk.labels?.length ? `<div class="tags">${esc(tagText(tk))}</div>` : ''}
+    <div class="foot">
+      <span class="key" style="color:${projOf(tk.project)?.color ?? 'var(--mute)'}">${esc(tk.key)}</span>
+      ${tk.priority ? lz(tk.priority, prioColor(tk.priority)) : ''}
+      <span class="sp"></span>
+      ${openBlockers(tk).length ? `<span class="blk">${esc(t('l.blocked'))} ${esc(openBlockers(tk).join(','))}</span>` : ''}
+      ${dueIn(tk) !== null ? `<span class="age ${dueClass(dueIn(tk))}">${esc(t('l.due'))} ${esc(tk.due.slice(5))}</span>` : ''}
+      ${live ? `<span class="lv"><i class="dot pulse"></i>${esc(t('l.live'))}</span>` : ''}
+      ${age > 0 ? `<span class="age ${age > 7 ? 'hot' : ''}">${age}${esc(t('l.days'))}</span>` : ''}
+      ${tk.comments.length ? `<span class="mt" title="${esc(t('l.comments'))}">${ic('chat', 'sm')}${tk.comments.length}</span>` : ''}
+      ${tk.pr ? `<span class="pr">${ic('pr', 'sm')}${esc(tk.pr)}</span>` : ''}
+    </div></article>`
+}
+// The canceled column only shows where it holds a ticket.
+const colsHtml = list => `<div class="cols">${S.D.cols.filter(c => c.id !== 'canceled' || list.some(x => x.col === 'canceled')).map(c => {
+  const items = list.filter(x => x.col === c.id)
+  return `<section class="col ${items.length ? '' : 'none'}" style="--c:${c.color}">
+    <div class="colh">${ic(c.icon)}<span>${esc(colName(c))}</span><span class="n">${items.length}</span></div>
+    <div class="cards" data-col="${c.id}">${items.map(card).join('')}</div></section>`
+}).join('')}</div>`
+
+function boardHtml() {
+  const list = scope()
+  if (S.proj !== 'ALL') return list.length ? colsHtml(list) : `<div class="empty-note">${esc(t(S.me || S.live || S.q ? 'empty.filter' : ro() ? 'empty.past' : 'empty.week'))}</div>`
+  if (!S.D.projects.length) return `<div class="empty-note">${esc(t('empty.noboards'))}</div>`
+  return S.D.projects.map(p => {
+    const mine = list.filter(x => x.project === p.id)
+    const closed = S.collapsed.has(p.id)
+    return `<div class="lane ${closed ? 'closed' : ''}"><div class="lh" data-act="fold" data-id="${p.id}">
+      ${ic('chevron-d', 'sm fold')}<span class="tile s" style="--c:${p.color}">${ic(p.icon)}</span><span>${esc(p.name)}</span>
+      <span class="sub">${esc(t('lane.count', mine.length))}</span>
+      ${closed ? `<span class="sum">${S.D.cols.filter(c => mine.some(x => x.col === c.id)).map(c => `<span>${esc(c.name)} ${mine.filter(x => x.col === c.id).length}</span>`).join('')}</span>` : ''}
+    </div>${closed ? '' : mine.length || !(S.me || S.live || S.q) ? colsHtml(mine) : `<div class="muted">${esc(t('lane.empty'))}</div>`}</div>`
+  }).join('')
+}
+
+function feedHtml() {
+  const rows = S.D.board.feed.filter(f => S.proj === 'ALL' || f.key.startsWith(`${S.proj}-`))
+  if (!rows.length) return `<div class="empty-note">${esc(t('feed.empty'))}</div>`
+  const color = k => (k === 'move' ? 'var(--warn)' : k === 'new' ? 'var(--ok)' : k === 'comment' ? '#5aa9b8' : 'var(--mute)')
+  return rows.map(f => `<div class="ev"><span class="tm">${md(f.t)} ${hhmm(f.t)}</span>${lz(t(`kind.${f.icon}`), color(f.icon))}
+    <span class="k" data-act="openkey" data-key="${esc(f.key)}">${esc(f.key)}</span><span>${esc(clean(f.text))} <span class="who">· ${esc(sessName(f.sid))}</span></span></div>`).join('')
+}
+
+function detailHtml(tk) {
+  const c = colOf(tk.col), P = projOf(tk.project), { code, rest } = splitCode(tk.title)
+  const linked = tk.sids.filter(id => id !== 'web').map(id => sessions().find(x => x.sid === id) ?? { sid: id, name: id.slice(0, 6), isGone: true, state: 'idle' })
+  const now = S.D.asOf
+  const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><span>${v}</span></div>`
+  const editing = S.editing === tk.key && !ro()
+  const side = `<aside class="dside">
+    ${ro() ? '' : `<div class="sec"><h4>${esc(t('status'))}</h4><select class="sel" data-sel="status">${S.D.cols.map(x => `<option value="${x.id}" ${x.id === tk.col ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="sec"><h4>${esc(t('priority'))}</h4><select class="sel" data-sel="priority"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option ${p.id === tk.priority ? 'selected' : ''}>${p.id}</option>`).join('')}</select></div>`}
+    ${tk.col === 'review' && !ro() ? `<div class="review-box"><b style="color:${c.color}">${esc(t('review.wait'))}</b><div class="row"><button class="btn primary" data-act="accept">${esc(t('accept'))}</button><button class="btn" data-act="reject">${esc(t('reject'))}</button></div></div>` : ''}
+    <div class="sec"><h4>${esc(t('details'))}</h4>
+      ${kv(t('d.src'), esc(tk.src === 'me' ? t('src.me') : t('src.claude')))}
+      ${kv(t('d.stay'), `${Math.floor((now - tk.since) / DAY)}${esc(t('l.days'))}`)}
+      ${kv(t('d.commits'), tk.commits)}
+      ${tk.pr ? kv('PR', `<span style="color:var(--ok)">${esc(tk.pr)}</span>`) : ''}
+      ${tk.branch ? kv(t('d.branch'), esc(tk.branch)) : ''}
+      ${tk.worktree ? kv(t('d.worktree'), esc(tk.worktree)) : ''}
+      ${tk.labels?.length ? kv(t('d.labels'), esc(tagText(tk))) : ''}
+      ${tk.due ? (() => { const n = dueIn(tk); return kv(t('d.due'), `${esc(tk.due)}${n === null ? '' : ` · ${esc(n < 0 ? t('due.late', -n) : n === 0 ? t('due.today') : t('due.left', n))}`}`) })() : ''}
+    </div>
+    ${(() => {
+      // Relations both ways; the reverse sides are derived. Archived tickets are not on the board, so they show as plain keys.
+      const link = k => { const x = findTicket(k); return x ? `<span class="rel" data-act="openkey" data-key="${esc(x.key)}">${esc(x.key)}</span> ${esc(colOf(x.col).name)}` : `${esc(k)} <span class="muted">${esc(t('rel.archived'))}</span>` }
+      const kids = tickets().filter(x => x.parent === tk.key)
+      const rows = [
+        [t('rel.parent'), tk.parent ? [tk.parent] : []],
+        [t('rel.blockedBy'), tk.blockedBy || []],
+        [t('rel.blocks'), tickets().filter(x => (x.blockedBy || []).includes(tk.key)).map(x => x.key)],
+        [t('rel.children', kids.filter(x => !isOpen(x)).length, kids.length), kids.map(x => x.key)],
+      ].filter(r => r[1].length)
+      return rows.length ? `<div class="sec"><h4>${esc(t('relations'))}</h4>${rows.map(([l, ks]) => kv(l, ks.map(link).join('，'))).join('')}</div>` : ''
+    })()}
+    <div class="sec"><h4>${esc(t('sessions'))}</h4>
+      ${linked.length ? linked.map(x => `<div class="ss"><i class="dot ${x.isGone || x.state === 'idle' ? '' : x.state === 'wait' ? 'wait' : 'pulse'}" style="${x.isGone || x.state === 'idle' ? 'background:var(--line2)' : ''}"></i><span>${esc(x.label || x.name)}</span><span class="st">${esc(sessState(x))}</span></div>`).join('') : `<div class="muted">${esc(t('sessions.none'))}</div>`}
+      <div class="hint" style="margin-top:8px">${esc(t('w.noopen'))}</div>
+    </div></aside>`
+  const main = `<div>
+    <div class="sec"><h4>${esc(t('desc'))}${ro() || editing ? '' : `<button class="btn ghost" data-act="editdesc">${esc(t('w.edit'))}</button>`}</h4>
+      ${editing ? `<textarea id="descTa" placeholder="${esc(t('desc.ph'))}" rows="8">${esc(tk.desc || '')}</textarea><div class="add" style="margin-top:8px;flex-direction:row"><button class="btn primary" data-act="savedesc">${esc(t('w.save'))}</button><button class="btn" data-act="canceldesc">${esc(t('w.cancel'))}</button></div>`
+        : tk.desc ? `<div class="md">${mdHtml(tk.desc)}</div>` : `<div class="muted">${esc(t('desc.none'))}</div>`}
+    </div>
+    <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length || ''}</h4>
+      ${ro() ? '' : `<div class="add"><textarea id="cmt" placeholder="${esc(t('comment.ph'))}" rows="3"></textarea><button class="btn primary" data-act="addcomment">${esc(t('w.add'))}</button></div>`}
+      ${tk.comments.slice().reverse().map(cm => `<div class="cm"><span class="by ${cm.by === 'me' ? 'me' : ''}">${esc(cm.by === 'me' ? t('you') : 'Claude')}</span><span class="tm">${md(cm.t)} ${hhmm(cm.t)}</span><div class="tx">${esc(clean(cm.text))}</div></div>`).join('')}
+    </div>
+    ${tk.notes.length ? `<div class="sec"><h4>${esc(t('notes'))}</h4><ul class="notes">${tk.notes.map(n => `<li>${esc(clean(n))}</li>`).join('')}</ul></div>` : ''}
+    <div class="sec"><h4>${esc(t('activity'))}</h4>
+      ${tk.log.length ? tk.log.slice().reverse().map(l => `<div class="act"><span class="tm">${hhmm(l.t)}</span><span>${esc(clean(l.text))} <span class="muted">· ${esc(sessName(l.sid))}</span></span></div>`).join('') : `<div class="muted">${esc(t('w.activity.none'))}</div>`}
+    </div>
+    ${ro() ? `<div class="hint">${esc(t('ro.hint'))}</div>` : ''}
+  </div>`
+  return `<div class="dhead"><button class="btn" data-act="back">${ic('chevron', 'sm')}${esc(t('back'))}</button><span>${esc(P?.name ?? tk.project)} /</span><span class="key" style="color:${P?.color}">${esc(tk.key)}</span>${lz(c.name, c.color)}${tk.priority ? lz(tk.priority, prioColor(tk.priority)) : ''}</div>
+    <div class="dtitle">${code ? `<b>${esc(code)}</b> ` : ''}${esc(rest)}</div>
+    <div class="dgrid">${main}${side}</div>`
+}
+
+function renderView() {
+  const el = $('#view')
+  const tk = S.sel ? findTicket(S.sel) : null
+  if (S.sel && !tk) { el.innerHTML = `<div class="dhead"><button class="btn" data-act="back">${ic('chevron', 'sm')}${esc(t('back'))}</button></div><div class="empty-note">${esc(S.sel)}</div>`; return }
+  el.innerHTML = tk ? detailHtml(tk) : S.tab === 'feed' ? feedHtml() : boardHtml()
+}
+
+let peekHtml = '', peekKey = null
+function renderPeek() {
+  const dlg = $('#peek')
+  const tk = S.peek ? findTicket(S.peek) : null
+  if (!tk) { if (dlg.open) dlg.close(); peekHtml = ''; peekKey = null; return }
+  const c = colOf(tk.col), P = projOf(tk.project), { code, rest } = splitCode(tk.title)
+  const now = S.D.asOf
+  const link = (k, style = '') => findTicket(k) ? `<span class="rel" ${style} data-act="peek" data-key="${esc(findTicket(k).key)}">${esc(k)}</span>` : esc(k)
+  const linked = tk.sids.filter(id => id !== 'web').map(id => sessions().find(x => x.sid === id) ?? { sid: id, name: id.slice(0, 6), isGone: true, state: 'idle' })
+  const idle = x => x.isGone || x.state === 'idle'
+  const n = dueIn(tk)
+  const row = (label, html) => `<div class="pk-row"><span>${esc(label)}</span><div>${html}</div></div>`
+  const blockers = openBlockers(tk)
+  const prio = `<select class="pk-pri" data-pksel="priority" data-key="${esc(tk.key)}" ${ro() ? 'disabled' : ''} style="--c:${tk.priority ? prioColor(tk.priority) : 'var(--mute)'}"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option ${p.id === tk.priority ? 'selected' : ''}>${p.id}</option>`).join('')}</select>`
+  const rows = [
+    row(t('priority'), prio),
+    tk.labels?.length ? row(t('d.labels'), tk.labels.map(l => `<span class="tg">${esc(l)}</span>`).join('')) : '',
+    tk.due ? row(t('d.due'), `<span class="dv ${n === null ? 'calm' : n < 0 ? 'hot' : n <= 2 ? 'warn' : 'calm'}">${esc(tk.due.slice(5))}${n === null ? '' : ` · ${esc(n < 0 ? t('due.late', -n) : n === 0 ? t('due.today') : t('due.left', n))}`}</span>`) : '',
+    blockers.length ? row(t('peek.blocked'), blockers.map(k => link(k, 'style="color:var(--bad)"')).join(', ')) : '',
+    tk.parent ? row(t('rel.parent'), link(tk.parent)) : '',
+    row(t('peek.sess'), linked.length
+      ? `<span class="ss"><i class="dot ${idle(linked[0]) ? '' : linked[0].state === 'wait' ? 'wait' : 'pulse'}" style="${idle(linked[0]) ? 'background:var(--line2)' : ''}"></i><span>${esc(linked[0].label || linked[0].name)}</span><span class="st">${esc(sessState(linked[0]))}${linked.length > 1 ? ` +${linked.length - 1}` : ''}</span></span>`
+      : `<span class="muted">${esc(t('none'))}</span>`),
+    tk.branch ? row(t('d.branch'), `<code>${esc(tk.branch)}</code>`) : '',
+    tk.pr ? row('PR', `<span style="color:var(--ok)">${esc(tk.pr)}</span>`) : '',
+    row(t('d.stay'), `${Math.max(0, Math.floor((now - tk.since) / DAY))} ${esc(t('l.days'))}`),
+  ].join('')
+  const notes = (tk.notes ?? []).map(x => plainLines(x).join(' ')).filter(Boolean)
+  const desc = tk.desc ? `<div class="pk-desc md" id="pkDesc">${mdHtml(tk.desc)}</div>`
+    : notes.length ? `<div class="pk-desc" id="pkDesc"><ul class="notes">${notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`
+    : `<div class="muted">${esc(t('desc.none'))}</div>`
+  const cms = tk.comments.slice(-2).reverse().map(cm => `<div class="cm"><span class="by ${cm.by === 'me' ? 'me' : ''}">${esc(cm.by === 'me' ? t('you') : 'Claude')}</span><span class="tm">${esc(ago(cm.t, now))}</span><div class="tx">${esc(clean(cm.text))}</div></div>`).join('')
+  const html = `<div class="pk-bar"><span><span>${esc(P?.name ?? tk.project)} / </span><b style="color:${P?.color ?? 'var(--mute)'}">${esc(tk.key)}</b></span><button class="btn ghost" data-act="closepeek" title="${esc(t('peek.close'))}" aria-label="${esc(t('peek.close'))}">${ic('x')}</button></div>
+    <div class="pk-body">
+      <div>
+        <h2 class="pk-title">${code ? `<b style="color:${P?.color ?? 'var(--mute)'}">${esc(code)}</b> ` : ''}${esc(rest)}</h2>
+        <div class="pk-acts"><button class="btn primary" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.open'))}</button></div>
+        <div class="sec"><h4>${esc(t('desc'))}</h4>${desc}</div>
+        <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length}</h4>${cms}${tk.comments.length ? `<button class="lnk" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.all'))}</button>` : ''}
+        ${ro() ? '' : `<div class="pk-cmt"><textarea id="pkCmt" rows="1" placeholder="${esc(t('peek.cmt.ph'))}"></textarea><button class="btn" data-act="peekcomment">${esc(t('peek.send'))}</button></div>`}</div>
+      </div>
+      <aside class="pk-side">
+        <label class="pk-status" style="--c:${c.color}"><select data-pksel="status" data-key="${esc(tk.key)}" aria-label="${esc(t('status'))}" ${ro() ? 'disabled' : ''}>${S.D.cols.map(x => `<option value="${x.id}" ${x.id === tk.col ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>${ic('chevron-d')}</label>
+        <div class="pk-panel"><h4>${esc(t('details'))}</h4>${rows}</div>
+      </aside>
+    </div>
+    <div class="pk-foot">${esc(t('peek.created', md(tk.created)))} · ${esc(t('peek.updated', ago(tk.log.at(-1)?.t ?? tk.created, now)))}</div>`
+  // Same markup: leave the DOM alone so an open dropdown or scroll position survives the 30 s / SSE reloads.
+  if (html !== peekHtml) {
+    // a refetch that changes the markup (a new comment) must not eat what is being typed
+    const old = $('#pkCmt'), draft = old && peekKey === tk.key ? [old.value, document.activeElement === old, old.selectionStart, old.selectionEnd] : null
+    dlg.innerHTML = html; peekHtml = html
+    const box = $('#pkCmt')
+    if (draft && box) { box.value = draft[0]; if (draft[1]) { box.focus(); box.setSelectionRange(draft[2], draft[3]) } }
+    const d = $('#pkDesc')
+    if (!dlg.open) dlg.showModal()
+    if (d) d.classList.toggle('fade', d.scrollHeight > d.clientHeight + 1)
+    if (peekKey !== tk.key) dlg.scrollTop = 0
+    peekKey = tk.key
+  } else if (!dlg.open) dlg.showModal()
+}
+
+function openNew() {
+  const dlg = $('#newDlg')
+  dlg.innerHTML = `<form class="dlg" id="newForm" method="dialog">
+    <div class="top"><b>${esc(t('w.new'))}</b><span class="sp"></span><button type="button" class="btn ghost" data-act="closenew" title="${esc(t('w.close'))}">${ic('x')}</button></div>
+    <div style="height:12px"></div>
+    <label class="fld">${esc(t('w.title'))}<input name="title" required autofocus placeholder="${esc(t('w.title.ph'))}" autocomplete="off"></label>
+    <div class="fld"><div class="row">
+      <label class="fld" style="margin:0">${esc(t('w.project'))}<select class="sel" name="project">${S.D.projects.map(p => `<option value="${p.id}" ${p.id === S.proj ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <label class="fld" style="margin:0">${esc(t('priority'))}<select class="sel" name="priority"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option>${p.id}</option>`).join('')}</select></label>
+    </div></div>
+    <label class="fld">${esc(t('w.desc.opt'))}<textarea name="desc" rows="5"></textarea></label>
+    <div class="btns"><button type="button" class="btn" data-act="closenew">${esc(t('w.cancel'))}</button><button class="btn primary" type="submit">${esc(t('w.create'))}</button></div></form>`
+  dlg.showModal()
+}
+
+// ---------- events ----------
+function nav(patch) { Object.assign(S, patch); render(true) }
+document.addEventListener('click', e => {
+  const peek = $('#peek')
+  if (e.target === peek) { S.peek = null; render(); return } // the backdrop is the dialog element itself
+  if (e.target === $('#newDlg')) { $('#newDlg').close(); return }
+  const el = e.target.closest('[data-act]')
+  if (!el) return
+  const d = el.dataset
+  switch (d.act) {
+    case 'proj': nav({ proj: d.id, sel: null, peek: null }); location.hash = ''; break
+    case 'tab': nav({ tab: d.tab, sel: null }); break
+    case 'wk': nav({ week: d.d === '0' ? 0 : S.week + Number(d.d), sel: null, peek: null }); load(); break
+    case 'theme': S.theme = S.theme === 'auto' ? 'light' : S.theme === 'light' ? 'dark' : 'auto'; localStorage.setItem('wb.theme', S.theme); applyTheme(); render(); break
+    case 'lang': S.lang = S.lang === 'zh' ? 'en' : 'zh'; localStorage.setItem('wb.lang', S.lang); load(); break
+    case 'fme': S.me = !S.me; render(true); break
+    case 'flive': S.live = !S.live; render(true); break
+    case 'fold': S.collapsed.has(d.id) ? S.collapsed.delete(d.id) : S.collapsed.add(d.id); localStorage.setItem('wb.collapsed', JSON.stringify([...S.collapsed])); render(); break
+    case 'peek': S.peek = d.key; render(); break
+    case 'closepeek': S.peek = null; render(); break
+    case 'open': case 'openkey': S.peek = null; S.sel = d.key; S.editing = null; location.hash = d.key; render(true); $('#view').scrollTop = 0; break
+    case 'back': S.sel = null; S.editing = null; location.hash = ''; render(true); break
+    case 'new': openNew(); break
+    case 'closenew': $('#newDlg').close(); break
+    case 'accept': run({ type: 'accept', key: S.sel }); break
+    case 'reject': run({ type: 'reject', key: S.sel }); break
+    case 'editdesc': S.editing = S.sel; render(true); $('#descTa')?.focus(); break
+    case 'canceldesc': S.editing = null; render(true); break
+    case 'savedesc': { const v = $('#descTa').value; S.editing = null; run({ type: 'meta', key: S.sel, desc: v }); break }
+    case 'addcomment': addComment(); break
+    case 'peekcomment': addPeekComment(); break
+  }
+})
+function addComment() {
+  const ta = $('#cmt')
+  const text = ta?.value.trim()
+  if (!text) return
+  ta.value = ''
+  run({ type: 'comment', key: S.sel, text })
+}
+// The popup's comment box: same send as the detail's, but the popup stays open and the box keeps its text if the send fails.
+async function addPeekComment() {
+  const ta = $('#pkCmt'), key = S.peek
+  const text = ta?.value.trim()
+  if (!text || !key) return
+  ta.value = ''
+  try { await post({ type: 'comment', key, text }) } catch (e) { toast(t('w.err', e.message)); const b = $('#pkCmt'); if (b && !b.value) b.value = text }
+  await load()
+}
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'pkCmt') {
+    if (e.key === 'Escape' && e.target.value.trim()) { e.preventDefault(); return } // a stray Esc must not lose a half-written comment
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); addPeekComment() }
+    return
+  }
+  if (e.key === 'Escape' && S.sel && !$('#peek').open && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
+    S.sel = null; S.editing = null; location.hash = ''; render(true); return }
+  if (e.target.id === 'cmt' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { // Enter submits, Shift+Enter is a newline
+    e.preventDefault(); addComment() }
+})
+document.addEventListener('change', e => {
+  const pk = e.target.dataset?.pksel
+  if (pk === 'status') return move(e.target.dataset.key, e.target.value)
+  if (pk === 'priority') return run({ type: 'meta', key: e.target.dataset.key, priority: e.target.value })
+  const k = e.target.dataset?.sel
+  if (!k || !S.sel) return
+  if (k === 'status') move(S.sel, e.target.value)
+  if (k === 'priority') run({ type: 'meta', key: S.sel, priority: e.target.value })
+})
+document.addEventListener('input', e => {
+  if (e.target.id === 'q') { S.q = e.target.value; renderView() }
+})
+document.addEventListener('compositionstart', () => { composing = true })
+document.addEventListener('compositionend', () => { composing = false; if (pending) { pending = false; render() } })
+// the peek dialog closes itself on Esc; keep the state in step
+$('#peek').addEventListener('cancel', e => { if ($('#pkCmt')?.value.trim() && document.activeElement === $('#pkCmt')) e.preventDefault() })
+$('#peek').addEventListener('close', () => { if (S.peek) { S.peek = null; render() } })
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'newForm') return
+  const f = new FormData(e.target)
+  const body = { type: 'create', title: f.get('title'), project: f.get('project'), desc: f.get('desc') }
+  if (f.get('priority')) body.priority = f.get('priority')
+  run(body, j => { toast(`${j.key}`); S.proj !== 'ALL' && S.proj !== body.project && (S.proj = body.project); render(true) })
+})
+// HTML5 drag and drop between columns
+let dragKey = null
+document.addEventListener('dragstart', e => {
+  const c = e.target.closest?.('.card')
+  if (!c || ro()) { e.preventDefault(); return }
+  dragKey = c.dataset.key; c.classList.add('dragging'); e.dataTransfer.setData('text/plain', dragKey); e.dataTransfer.effectAllowed = 'move'
+})
+document.addEventListener('dragend', () => { dragKey = null; document.querySelectorAll('.dragging,.over').forEach(x => x.classList.remove('dragging', 'over')) })
+document.addEventListener('dragover', e => {
+  const z = e.target.closest?.('.cards')
+  if (!z || !dragKey) return
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move'
+  document.querySelectorAll('.cards.over').forEach(x => x !== z && x.classList.remove('over'))
+  z.classList.add('over')
+})
+document.addEventListener('dragleave', e => { const z = e.target.closest?.('.cards'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over') })
+document.addEventListener('drop', e => {
+  const z = e.target.closest?.('.cards')
+  if (!z || !dragKey) return
+  e.preventDefault(); z.classList.remove('over')
+  const key = dragKey; dragKey = null
+  move(key, z.dataset.col)
+})
+window.addEventListener('hashchange', () => {
+  const k = decodeURIComponent(location.hash.slice(1))
+  if (k !== (S.sel || '')) { S.sel = /^[A-Z]+-\d+$/.test(k) ? k : null; render(true) }
+})
+
+// ---------- live updates ----------
+let deb = null
+const es = new EventSource('/api/stream')
+es.addEventListener('changed', () => { clearTimeout(deb); deb = setTimeout(load, 300) })
+es.onopen = () => { if (S.offline) { S.offline = false; load() } }
+es.onerror = () => { if (!S.offline) { S.offline = true; render() } }
+
+{
+  const k = decodeURIComponent(location.hash.slice(1))
+  if (/^[A-Z]+-\d+$/.test(k)) S.sel = k
+}
+load()
+// Follows a theme switch in the Claude app within ~30 s (the server re-reads its config every 10 s).
+setInterval(() => { if (S.theme === 'auto' && !document.hidden) load() }, 30000)
+</script>
+</body>
+</html>
