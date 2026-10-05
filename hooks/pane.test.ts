@@ -341,7 +341,7 @@ test('sections in order, empty ones absent; todo and done folded behind their fo
     expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing', 'sec-review'])
     // one line per ticket, a hover tint on its keyed Box
     const r = await byKey(ui, 'row-SVC-1')
-    expect(r.hover).toEqual({ backgroundColor: '#f3f4f7' })
+    expect(r.hover).toEqual({ backgroundColor: '#f4f3ef' })
     await expectNoEmoji(ui)
     await ui.unmount()
   }
@@ -433,7 +433,7 @@ test('narrow inline preview: open under the row, fold again, comment, status Sel
   expect(await ui.find({ key: 'peek-pop' })).toBeUndefined()
   const kids = (await byKey(ui, 'sec-doing')).children.map((c: any) => c.props?.key)
   expect(kids.indexOf('pv-SVC-1')).toBe(kids.indexOf('row-SVC-1') + 1)
-  expect((await byKey(ui, 'pv-SVC-1')).props.backgroundColor).toBe('#f3f4f7')
+  expect((await byKey(ui, 'pv-SVC-1')).props.backgroundColor).toBe('#f4f3ef')
   expect(await ui.find({ type: 'Text', text: /再点一次标题收起/ })).toBeDefined()
   await ui.press({ key: 'open-SVC-1' })
   expect(await ui.find({ key: 'pv-SVC-1' })).toBeUndefined()
@@ -528,8 +528,8 @@ test('past week: the preview is read-only', async ($: any, on: any) => {
 })
 
 const CFG = `${HOME}/Library/Application Support/Claude/config.json`
-const DARK = '#262b36'
-const LIGHT = '#ffffff'
+const DARK = '#262624'
+const LIGHT = '#f4f3ef'
 // The pane follows the Claude app's theme (config.json userThemeMode, else the OS); it has no theme button of its own (WB-29).
 async function themed($: any, on: any, config: string | null, appearance = 'Light') {
   // `defaults read -g AppleInterfaceStyle`: prints Dark in Dark mode, fails in Light mode
@@ -823,7 +823,7 @@ test('bilingual title / desc: tool asks for the other language, the pane shows t
 })
 
 // A desktop board: SVC-1 in 进行中 and live (its session is busy), SVC-2 in 待审核, SVC-3 done and accepted.
-const TINT = { light: '#f3f4f7', dark: '#262a31' }
+const TINT = { light: '#f4f3ef', dark: '#262624' }
 const LIVE_COLOR = '#3f9a6b'
 async function striped($: any, on: any, cols: number, mode = 'light') {
   on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))

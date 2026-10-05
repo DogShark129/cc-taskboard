@@ -38,13 +38,13 @@ const t = (key: K, ...args: (string | number)[]) => tl(lang, key, ...args)
 // in its own theme, so a theme of the plugin's own would put light text on a light tint (WB-29). The web UI keeps its own switch.
 let resolved: Resolved = 'light'
 const PALETTE: Record<Resolved, { bg: string; fg: string; border: string; mute: string }> = {
-  dark: { bg: '#262b36', fg: '#dde2ea', border: '#4a5263', mute: '#8b93a3' },
-  light: { bg: '#ffffff', fg: '#1f2a44', border: '#c9d1de', mute: '#6b7385' },
+  dark: { bg: '#262624', fg: '#dde2ea', border: '#4a5263', mute: '#8b93a3' },
+  light: { bg: '#f4f3ef', fg: '#1f2a44', border: '#c9d1de', mute: '#6b7385' },
 }
-// The board's surface colors per theme: row tint (hover, open preview), text levels, accent, live (a session is working it).
+// The board's surface colors per theme: row tint (hover, open preview; warm grey in the app's own hue, Fan picked it), text levels, accent, live (a session is working it).
 const SURFACE: Record<Resolved, { tint: string; text: string; sub: string; mute: string; accent: string; live: string }> = {
-  light: { tint: '#f3f4f7', text: '#1f2a44', sub: '#5b6478', mute: '#8b93a3', accent: '#5b6cf0', live: '#3f9a6b' },
-  dark: { tint: '#262a31', text: '#e3e6ec', sub: '#a6adbb', mute: '#7c8496', accent: '#8c99ff', live: '#62c08f' },
+  light: { tint: '#f4f3ef', text: '#1f2a44', sub: '#5b6478', mute: '#8b93a3', accent: '#5b6cf0', live: '#3f9a6b' },
+  dark: { tint: '#262624', text: '#e3e6ec', sub: '#a6adbb', mute: '#7c8496', accent: '#8c99ff', live: '#62c08f' },
 }
 const cn = (id: Col) => t(`col.${id}` as K)
 const pn = (id: string) => projName(lang, id)
