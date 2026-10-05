@@ -413,20 +413,19 @@ test('terminal ribbon: one line of runs in the status colors, width - 4 cells', 
   }
 })
 
-test('wide ALL view shows the project column; a project view and the narrow pane do not', async ($: any, on: any) => {
+// WB-33: every row leads with its key in the project color, wide or narrow, ALL or one project; no separate project column.
+test('rows lead with the ticket key in the project color', async ($: any, on: any) => {
   await seed($, on, 'desktop')
-  const projCol = async (ui: any) => (await byKey(ui, 'row-SVC-1')).children[0]?.props?.width === 4
+  const lead = async (ui: any) => JSON.stringify((await byKey(ui, 'row-SVC-1')).children[0])
   const ui = await $.ui.mount(PANE('desktop', 140))
-  expect(await projCol(ui)).toBe(true)
-  expect(JSON.stringify((await byKey(ui, 'row-SVC-1')).children[0])).toContain('"SVC"')
-  await ui.press({ key: 'p-SVC' })
-  expect(await projCol(ui)).toBe(false)
-  await ui.press({ key: 'p-ALL' })
+  for (const p of ['', 'p-SVC', 'p-ALL']) { // ALL, one project, ALL again
+    if (p) await ui.press({ key: p })
+    expect(await lead(ui)).toContain('"color":"#8394e6"},"children":["SVC-1"]')
+    expect(JSON.stringify(await byKey(ui, 'row-SVC-1'))).not.toContain('"children":["SVC"]') // no project column
+  }
   await ui.unmount()
   const n = await $.ui.mount(PANE('desktop', 60))
-  expect(await projCol(n)).toBe(false)
-  // narrow: the key carries the project color instead
-  expect((await n.find({ type: 'Text', text: 'SVC-1' }))?.props.color).toBe('#8394e6')
+  expect(await lead(n)).toContain('"color":"#8394e6"},"children":["SVC-1"]')
   await n.unmount()
 })
 

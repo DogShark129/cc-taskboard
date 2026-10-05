@@ -979,7 +979,6 @@ export const register: Register = on => {
     // Canceled folds like done; a search opens it, so archived hits show.
     const canceledOpen = Boolean(v.canceledOpen) || Boolean(q)
     const openOf = (c: Col) => (c === 'todo' ? Boolean(v.todoOpen) : c === 'done' ? doneOpen : canceledOpen)
-    const showProj = wide && v.proj === 'ALL'
 
     // Header
     const boardTitle = t('board.title', proj ? pn(proj.id) : t('all.projects'))
@@ -1145,15 +1144,14 @@ export const register: Register = on => {
         tk.proposeCancel ? { text: t('d.propose'), color: BAD } : null,
         isLive(tk) ? { text: t('l.live'), color: surf.live } : null,
         wide && tk.comments.length ? { text: `${tk.comments.length} ✎`, color: surf.mute } : null,
-        { text: tk.key, color: wide ? surf.mute : pc },
         age > 0 ? { text: `${age}${t('l.days')}`, color: age > 7 ? WARN : surf.mute } : null,
       ].filter((x): x is { text: string; color: string; pill?: boolean } => x !== null)
       // ponytail: cells are terminal cells; the desktop font runs narrower, so 4 spare cells keep the row on one line there too
-      const room = width - 2 - (showProj ? 5 : 0) - right.reduce((n, r) => n + cells(r.text) + 1, 0) - 4
+      const room = width - 2 - (cells(tk.key) + 1) - right.reduce((n, r) => n + cells(r.text) + 1, 0) - 4
       const open = v.peek === tk.key
       const line = (
         <Box key={`row-${tk.key}`} gap={1} backgroundColor={open ? surf.tint : undefined} hover={{ backgroundColor: surf.tint }}>
-          {showProj ? <Box width={4} flexShrink={0}><Text bold color={pc} wrap="truncate-end">{tk.project}</Text></Box> : null}
+          <Box flexShrink={0}><Text bold color={pc}>{tk.key}</Text></Box>{/* the key leads the row in the project color (WB-33); it names the project too */}
           <Box flexGrow={1} flexShrink={1}>
             <Button key={`open-${tk.key}`} plain dimColor={closed} label={clip(code ? `${code} ${rest}` : rest, Math.max(6, room))}
               onPress={() => setView({ peek: open ? null : tk.key })} />
