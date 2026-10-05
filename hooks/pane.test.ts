@@ -1071,3 +1071,32 @@ test('WB-28: a search finds canceled tickets archived in earlier weeks, and 恢�
   expect(files.get(LOG)).toContain('"key":"SVC-1","col":"doing","text":"你恢复"')
   await ui.unmount()
 })
+
+// WB-30: 跳到 session opens the ticket's newest other session through the app's own link; archived or unknown ones are skipped.
+test('preview: go to session opens claude://claude.ai/epitaxy/<local id>, skipping archived ones', async ($: any, on: any) => {
+  const opened: string[][] = []
+  const files = memfs(on, { run: (_$: any, e: any) => (e.argv[0] === 'open' && opened.push(e.argv), { value: { exitCode: 0, stdout: '', stderr: '' } }) })
+  const SESS = `${HOME}/Library/Application Support/Claude/claude-code-sessions/o/u`
+  const t = Date.now() - 3_600_000
+  files.set(`${DATA}/events/old.jsonl`, `${JSON.stringify({ k: 'create', key: 'SVC-1', project: 'SVC', title: '[T-42] 登录页面', col: 'doing', src: 'claude', t, sid: 'old' })}\n`)
+  files.set(`${SESS}/local_old-1.json`, JSON.stringify({ cliSessionId: 'old', title: '登录页面' }))
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'create', title: '[T-43] 本会话的票' }) // SVC-2: only this session
+  for (const cols of [60, 140]) {
+    const ui = await $.ui.mount(PANE('desktop', cols))
+    await ui.press({ key: 'open-SVC-2' })
+    expect(await ui.find({ key: 'peek-jump' })).toBeUndefined() // nowhere else to go
+    await ui.press({ key: 'open-SVC-1' })
+    await ui.press({ key: 'peek-jump' })
+    expect(opened.at(-1)).toEqual(['open', 'claude://claude.ai/epitaxy/local_old-1'])
+    await ui.unmount()
+  }
+  // archived in the app: nothing opens (a toast says so)
+  files.set(`${SESS}/local_old-1.json`, JSON.stringify({ cliSessionId: 'old', title: '登录页面', isArchived: true }))
+  const n = opened.length
+  const ui = await $.ui.mount(PANE('desktop', 140))
+  await ui.press({ key: 'open-SVC-1' })
+  await ui.press({ key: 'peek-jump' })
+  expect(opened.length).toBe(n)
+  await ui.unmount()
+})

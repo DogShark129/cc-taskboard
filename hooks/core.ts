@@ -79,7 +79,7 @@ export const ZH = {
   'hand': '交给 Claude：', 'spawn': '开新会话做', 'go.here': '在本会话继续', 'ask.owner': '问 {0} 进度', 'verify': '核对实际状态',
   'comments': '评论', 'you': '你', 'comment.ph': '写评论，回车提交；在做这张票的会话下一轮会看到',
   'notes': '要点', 'activity': '活动', 'ro.hint': '历史周只读，回到本周才能移动。', 'move.to': '移到：',
-  'toast.moved': '{0} 移到 {1} · {2}', 'toast.other': '另一个会话', 'toast.jump': '已让 Claude 切过去',
+  'toast.moved': '{0} 移到 {1} · {2}', 'toast.other': '另一个会话', 'toast.jump': '已切到 {0}', 'jump.go': '跳到 session', 'jump.none': '没有可以打开的 session（可能都已归档）', 'jump.fail': '没能打开那个 session',
   'toast.spawn': '已让 Claude 为 {0} 准备新会话，点一下卡片就开', 'toast.go': '已让本会话继续 {0}', 'toast.sent': '已发给 {0}', 'toast.verify': '已让本会话核对 {0}',
   'fold.create': '新建「{0}」→ {1}', 'fold.move': '→ {0}', 'fold.reason': '（{0}）', 'fold.comment.me': '你 评论：{0}', 'fold.comment.claude': 'Claude 评论：{0}',
   // web app only
@@ -125,7 +125,7 @@ export const I18N: Record<Lang, typeof ZH> = {
     'hand': 'Hand to Claude:', 'spawn': 'Do in a new session', 'go.here': 'Continue in this session', 'ask.owner': 'Ask {0} for progress', 'verify': 'Verify actual state',
     'comments': 'Comments', 'you': 'You', 'comment.ph': 'Write a comment, Enter to submit; the session on this ticket sees it next turn',
     'notes': 'Key points', 'activity': 'Activity', 'ro.hint': 'Past week is read-only; go back to this week to move tickets.', 'move.to': 'Move to:',
-    'toast.moved': '{0} moved to {1} · {2}', 'toast.other': 'another session', 'toast.jump': 'Asked Claude to switch over',
+    'toast.moved': '{0} moved to {1} · {2}', 'toast.other': 'another session', 'toast.jump': 'Switched to {0}', 'jump.go': 'Go to session', 'jump.none': 'No session to open (all archived?)', 'jump.fail': 'Could not open that session',
     'toast.spawn': 'Asked Claude to prepare a new session for {0}; click the card to open it', 'toast.go': 'Asked this session to continue {0}', 'toast.sent': 'Sent to {0}', 'toast.verify': 'Asked this session to verify {0}',
     'fold.create': 'Created "{0}" → {1}', 'fold.move': '→ {0}', 'fold.reason': ' ({0})', 'fold.comment.me': 'You commented: {0}', 'fold.comment.claude': 'Claude commented: {0}',
     // web app only

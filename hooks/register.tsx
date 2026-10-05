@@ -330,6 +330,33 @@ async function appTitle($: $, app: string) {
     if (d) return !d.isArchived && typeof d.title === 'string' ? d.title as string : undefined
   }
 }
+// WB-30: the desktop app opens a session from its own link, claude://claude.ai/epitaxy/<local id> (list_sessions' `link`).
+const APP_ID = /^local_[A-Za-z0-9-]{1,64}$/
+// The desktop id of a CLI session, not archived: Sess.app when this plugin saw it start, else the app's local_<id>.json whose cliSessionId it is.
+async function appIdOf($: $, cli: string, known?: string) {
+  if (known && APP_ID.test(known)) return (await appTitle($, known)) === undefined ? undefined : known
+  const ls = (p: string) => $.fs.list(p).catch(() => [] as { name: string }[])
+  for (const org of await ls(APP_SESSIONS)) for (const user of await ls(`${APP_SESSIONS}/${org.name}`)) {
+    const dir = `${APP_SESSIONS}/${org.name}/${user.name}`
+    for (const f of await ls(dir)) {
+      const id = f.name.replace(/\.json$/, '')
+      if (!APP_ID.test(id)) continue
+      const d = await $.fs.read(`${dir}/${f.name}`).then(JSON.parse).catch(() => null)
+      if (d?.cliSessionId === cli) return d.isArchived ? undefined : id
+    }
+  }
+}
+// Switch the desktop app to the first of these CLI sessions it still has; a toast says which, or that none could open.
+async function jumpTo($: $, sessions: Sess[]) {
+  for (const s of sessions) {
+    const app = await appIdOf($, s.sid, s.app)
+    if (!app) continue
+    const r = await $.process.run(['open', `claude://claude.ai/epitaxy/${app}`], { timeoutMs: 5000 }).catch(() => null)
+    $.ui.toast(r?.exitCode === 0 ? t('toast.jump', s.label || s.name) : t('jump.fail'))
+    return
+  }
+  $.ui.toast(t('jump.none'))
+}
 async function staleNow($: $, b: Board) {
   const spawned = await spawnedList($)
   const titles: Record<string, string> = {}
@@ -739,6 +766,10 @@ export const register: Register = on => {
     const actsOf = (tk: Ticket): { id: 'cancel' | 'confirm' | 'keep' | 'restore'; label: string }[] =>
       tk.proposeCancel ? [{ id: 'confirm', label: t('cancel.ok') }, { id: 'keep', label: t('cancel.keep') }]
         : tk.col === 'canceled' ? [{ id: 'restore', label: t('restore') }] : [{ id: 'cancel', label: t('cancel') }]
+    // A ticket's sessions other than this one, the most recently active first: where 跳到 session goes.
+    const linkedOf = (tk: Ticket) => tk.sids.filter(x => x !== sid)
+      .map(id => b.sessions.find(x => x.sid === id) ?? { sid: id, cwd: '', name: id.slice(0, 6), project: null, seen: 0, state: 'idle' as const, isGone: true })
+      .sort((x, y) => y.seen - x.seen)
     const findShown = (key?: string | null) => (key ? b.tickets.find(x => x.key === key) ?? archived().find(x => x.key === key) : undefined)
     const peekTk = findShown(v.peek) // a ticket that is gone shows nothing
 
@@ -837,9 +868,7 @@ export const register: Register = on => {
               <Box key={`ss-${x.sid}`} gap={1} flexWrap="wrap">
                 <Text color={x.isGone ? MUTE : x.state === 'run' ? OK : x.state === 'wait' ? WARN : undefined}>{x.label || x.name}</Text>
                 <Text color={MUTE}>{sessState(x)}{x.sid === sid ? t('this.session') : ''}</Text>
-                {!wk && x.sid !== sid && !x.isGone ? (
-                  <Button key={`jump-${x.sid}`} label={t('jump')} onPress={() => ask(`在桌面 app 里打开 session「${x.label || x.name}」（id ${x.sid}），用 mcp__ccd_window__open_session_in。`, t('toast.jump'))} />
-                ) : null}
+                {x.sid !== sid ? <Button key={`jump-${x.sid}`} label={t('jump')} onPress={() => jumpTo($, [x])} /> : null}
               </Box>
             )) : <Text color={MUTE}>{t('sessions.none')}</Text>}
           </Box>
@@ -1068,6 +1097,7 @@ export const register: Register = on => {
             </Box>
           ) : null}
           <Button key="peek-open" label={t('peek.open')} variant="primary" onPress={() => setView({ sel: tk.key, peek: null })} />
+          {tk.sids.some(x => x !== sid) ? <Button key="peek-jump" label={t('jump.go')} onPress={() => jumpTo($, linkedOf(tk))} /> : null}
           {wk ? null : actsOf(tk).map(a => <Button key={`peek-${a.id}`} label={a.label} onPress={() => ticketAct($, a.id, tk.key)} />)}
         </Box>,
         // Surfaces without Select (mobile): the detail page's button rows.
