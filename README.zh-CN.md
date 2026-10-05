@@ -8,22 +8,32 @@
   <a href="README.md">English</a> · <strong>简体中文</strong>
 </p>
 
+cc-taskboard 用在两个地方：**Claude Code 侧边栏里的看板面板**，跟着每个会话；以及一个**本地网页**，在一处管理你所有的会话和工单。
+
+**Claude Code 侧边栏**：当前项目的看板，就在对话旁边。
+
+![Claude Code 侧边栏里的 cc-taskboard 面板（演示数据）](docs/images/pane-zh.png)
+
+**网页**（`http://localhost:4790`）：所有项目、所有会话在一块看板上；打开工单、评论、验收，或为它开一个新会话。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark-zh.png">
-  <img src="docs/images/board-zh.png" alt="cc-taskboard 网页版：全部项目看板（演示数据）">
+  <img src="docs/images/board-zh.png" alt="cc-taskboard 网页：全部项目看板（演示数据）">
 </picture>
 
 ## 安装
 
-把下面这段话贴进 Claude Code：
+1. 打开函数钩子插件：在 `~/.claude/settings.json` 的 `env` 里加上 `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"`。
+2. 在 Claude Code 里：
 
-```text
-帮我安装 cc-taskboard 插件：https://github.com/DogShark129/cc-taskboard ，按仓库里 INSTALL.md 的步骤来。
-```
+   ```
+   /plugin marketplace add DogShark129/cc-taskboard
+   /plugin install cc-taskboard@cc-taskboard
+   ```
 
-想手动装：看 [INSTALL.zh-CN.md](INSTALL.zh-CN.md)。
+3. 重启 Claude Code，说一句「初始化看板」。
 
-装好后重启 Claude Code，说一句「初始化看板」。
+更新、团队配置、卸载：看 [INSTALL.zh-CN.md](INSTALL.zh-CN.md)。
 
 ## 它做什么
 
@@ -47,7 +57,7 @@
    /kanban
    ```
 
-   <!-- sidebar screenshot: docs/images/pane-zh.png -->
+   面板停靠在侧边栏；点「网页版」打开网页。
 
 4. **审核。** 做完的票停在「待审核」。点「验收通过」移到已完成；或者写条评论把它打回：评论会唤醒负责这张票的会话，由它处理并回复。
 

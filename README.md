@@ -8,22 +8,32 @@
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
+cc-taskboard lives in two places: a **board pane in the Claude Code sidebar**, next to every session, and a **local web page** where you manage all your sessions and tickets at once.
+
+**In the Claude Code sidebar**: the board of the project you are in, one click from the chat.
+
+![The cc-taskboard pane in the Claude Code sidebar (demo data)](docs/images/pane-en.png)
+
+**On the web page** (`http://localhost:4790`): every project and session on one board; open a ticket, comment, accept, or start a new session for it.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark-en.png">
-  <img src="docs/images/board-en.png" alt="cc-taskboard web board, all projects (demo data)">
+  <img src="docs/images/board-en.png" alt="cc-taskboard web page: all projects (demo data)">
 </picture>
 
 ## Install
 
-Paste this into Claude Code:
+1. Turn on function-hook plugins: in `~/.claude/settings.json`, add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block.
+2. In Claude Code:
 
-```text
-Install the cc-taskboard plugin from https://github.com/DogShark129/cc-taskboard — follow the steps in its INSTALL.md.
-```
+   ```
+   /plugin marketplace add DogShark129/cc-taskboard
+   /plugin install cc-taskboard@cc-taskboard
+   ```
 
-Or install by hand: [INSTALL.md](INSTALL.md).
+3. Restart Claude Code and say `set up the task board`.
 
-Then restart Claude Code and say `set up the task board`.
+Updates, team setup and uninstall: [INSTALL.md](INSTALL.md).
 
 ## What it does
 
@@ -47,7 +57,7 @@ Every Claude Code session writes what it works on to a shared, local log, and ev
    /kanban
    ```
 
-   <!-- sidebar screenshot: docs/images/pane-en.png -->
+   The pane docks in the sidebar; its "Web" link opens the web page.
 
 4. **Review.** A finished ticket waits in In review. Click "Accept" to move it to Done, or write a comment to send it back: the comment wakes the session that owns the ticket, which handles it and replies.
 
