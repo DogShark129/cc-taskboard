@@ -176,14 +176,14 @@ test('Claude can only reach 待审核; the person accepts; desc/priority/comment
   expect(files.get(LOG)).toContain('"priority":"P0"')
   await ui.input({ key: 'comment', text: '先别合，等 Ian' })
   expect(files.get(LOG)).toContain('"k":"comment","key":"SVC-1","by":"me","text":"先别合，等 Ian"')
-  // WB-21: no Claude turn; the app's new-session link, the claim line and the ticket's worktree filled in
+  // WB-21: no Claude turn; the app's new-session link, the claim line and the project root filled in
   const before = prompts.length
   await ui.press({ key: 'spawn' })
   expect(prompts.length).toBe(before)
   const link = new URL(opened.at(-1)!)
   expect(`${link.protocol}//${link.host}${link.pathname}`).toBe('claude://code/new')
   expect(link.searchParams.get('q')).toMatch(/^认领 SVC-1：先调用 mcp__cc-taskboard__ticket action:update key:SVC-1 work:true/)
-  expect(link.searchParams.get('folder')).toBe(`${HOME}/web-app/.claude/worktrees/t42`)
+  expect(link.searchParams.get('folder')).toBe(`${HOME}/web-app`) // the project root, not the ticket's worktree
   // the comment wakes this session (it owns SVC-1) at the end of the turn, as a prompt of its own
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1' })
   expect(prompts.some(p => p.includes('SVC-1「[T-42] 登录页面」：先别合，等 Ian'))).toBe(true)

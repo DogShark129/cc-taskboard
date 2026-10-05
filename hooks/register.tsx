@@ -354,10 +354,10 @@ async function jumpTo($: $, sessions: Sess[]) {
   $.ui.toast(t('jump.none'))
 }
 // WB-21: a new session for a ticket through the app's own link, claude://code/new?q=&folder=: the app switches to a new-session
-// screen in the ticket's folder with the claim line typed in, and the person presses send. That first prompt, 「认领 <KEY>」,
+// screen in the ticket's project root (projects.json `root`, Fan's call: not a session's old worktree) with the claim line typed in, and the person presses send. That first prompt, 「认领 <KEY>」,
 // marks it spawned (markSpawned), so its title follows the ticket. The pane's own 进行中 moves still only leave a chip.
 async function newSessionFor($: $, tk: Ticket) {
-  const folder = tk.worktree || projOf(tk.project)?.root || me.cwd
+  const folder = projOf(tk.project)?.root || me.cwd
   const q = `认领 ${tk.key}：先调用 mcp__cc-taskboard__ticket action:update key:${tk.key} work:true，再看 ticket 描述和评论开工。`
   const r = await $.process.run(['open', `claude://code/new?q=${encodeURIComponent(q)}&folder=${encodeURIComponent(folder)}`], { timeoutMs: 5000 }).catch(() => null)
   $.ui.toast(r?.exitCode === 0 ? t('toast.spawn', tk.key) : t('spawn.fail'))
