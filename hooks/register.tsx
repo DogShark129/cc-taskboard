@@ -30,7 +30,8 @@ const PANE = 'cc-taskboard'
 const TOOL = 'mcp__cc-taskboard__ticket'
 const WEB = 'http://127.0.0.1:4790'
 // Link refuses 127.0.0.1 (https or http://localhost only); the server binds IPv4 loopback, which localhost reaches.
-const WEB_LINK = 'http://localhost:4790'
+// Spelled as new URL(href).href (trailing slash): the desktop page refuses a Client tree with any other spelling (WB-26).
+const WEB_LINK = 'http://localhost:4790/'
 
 // Current UI language: session.start loads it from the store, the EN / 中文 button flips it.
 let lang: Lang = 'zh'

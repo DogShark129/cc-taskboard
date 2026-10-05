@@ -643,7 +643,7 @@ test('kanban-web and the web link', async ($: any, on: any) => {
   await hdr(ui, 'web')
   await hdr(ui, 'lang')
   const link = await ui.find({ type: 'Link', in: 'header' })
-  expect([link?.props.label, link?.props.href]).toEqual(['Web', 'http://localhost:4790'])
+  expect([link?.props.label, link?.props.href]).toEqual(['Web', 'http://localhost:4790/'])
   await expectNoEmoji(ui, ['header'])
   await hdr(ui, 'lang')
   await ui.unmount()
@@ -1240,7 +1240,7 @@ test('headerLayout: no overlapping hits, tabs wrap by whole tab, the right group
     filters: [{ id: 'me', label: '只看等我的', on: false }, { id: 'live', label: '正在做的', on: false }],
     segs: [{ id: 'board', label: '看板', active: true }, { id: 'feed', label: '动态', active: false }],
     search: { q: '', placeholder: '搜索…' }, live: '在做：kanban → WB-23',
-    web: { label: '网页版', href: 'http://localhost:4790' }, theme: '浅色', lang: 'EN', surf: {},
+    web: { label: '网页版', href: 'http://localhost:4790/' }, theme: '浅色', lang: 'EN', surf: {},
   }
   for (const w of [136, 96, 56, 40]) {
     const { hits, height } = headerLayout(props, w)
@@ -1388,3 +1388,16 @@ for (const [surface, big] of [['desktop', true], ['terminal', false]] as const) 
     await ui.unmount()
   })
 }
+
+// WB-26: the desktop page refuses a Client tree whose Link href is not spelled as new URL(href).href (the mount does not
+// check it), and then draws only the fallback header. Every Link the header Client draws keeps the canonical spelling.
+test('the header Client on desktop draws Links the page accepts', async ($: any, on: any) => {
+  await seed($, on, 'desktop')
+  const ui = await $.ui.mount(PANE('desktop', 60))
+  const links: any[] = []
+  const walk = (n: any) => { if (!n || typeof n !== 'object') return; if (Array.isArray(n)) return n.forEach(walk); if (n.type === 'Link') links.push(n.props); Object.values(n.props ?? {}).forEach(walk); walk(n.children) }
+  walk(await ui.drawn({ in: 'header' }))
+  expect(links.length).toBeGreaterThan(0)
+  for (const l of links) expect(l.href).toBe(new URL(l.href).href)
+  await ui.unmount()
+})
