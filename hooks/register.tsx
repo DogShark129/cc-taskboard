@@ -815,7 +815,7 @@ export const register: Register = on => {
         <Box key={`c-${tk.key}`} backgroundColor={surf.tint}>
           <Box width={1} flexShrink={0} backgroundColor={isLive(tk) ? surf.live : stripe} />
           <Box flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={surf.tint}>
-            <Button key={`open-${tk.key}`} plain dimColor={done} label={clip(code ? `${code} ${rest}` : rest, 3 * Math.max(1, w - 5))} onPress={() => setView({ peek: tk.key })} />
+            <Button key={`open-${tk.key}`} plain dimColor={done} label={clip(code ? `${code} ${rest}` : rest, 3 * Math.max(1, w - 3))} onPress={() => setView({ peek: tk.key })} />
             <Box justifyContent="space-between" gap={1} backgroundColor={surf.tint}>
               <Box gap={1} flexShrink={1} backgroundColor={surf.tint}>
                 <Text {...tx} color={done ? surf.mute : p?.color ?? MUTE} bold strikethrough={done}>{tk.key}</Text>

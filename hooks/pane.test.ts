@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CARD_H, GRID_CARD_W, HEAD_H, cardHeight, cardRows, columnLayout, gridLayout, peekGeo, peekRect } from './board-client'
-// A card with a short title: the board heights below are made of these (4 rows: border, 1 title row, meta, border) unless a test says otherwise.
+// A card with a short title: the board heights below are made of these (2 rows: 1 title row, meta) unless a test says otherwise.
 const SHORT = cardHeight({}, 20)
 import { LEGACY_DATA_DIR, colOf, weekStartOf } from './core.ts'
 import { headerLayout } from './header-client'
@@ -879,6 +879,9 @@ test('gridLayout: cards per row, section offsets, no overlap, short cards share 
 // Walk a drawn tree.
 const walk = (n: any, f: (n: any) => void) => { f(n); for (const c of n?.children ?? []) if (typeof c === 'object') walk(c, f) }
 const nodes = (tree: any, f: (n: any) => boolean) => { const out: any[] = []; walk(tree, n => { if (f(n)) out.push(n) }); return out }
+// A Client card: a tinted Box whose first child is the 1-cell stripe column of ▎ rows.
+const isCard = (n: any) => n.type === 'Box' && n.props?.backgroundColor && n.children?.[0]?.props?.width === 1 && n.children[0].props.flexDirection === 'column'
+const stripeText = (c: any) => c.children[0].children.map((t: any) => t.children.join(''))
 
 for (const cols of [50, 70]) {
   test(`narrow pane at ${cols}: content-height cards drawn by the Client, wrapping titles, click to peek, drag to a section`, async ($: any, on: any) => {
@@ -900,7 +903,7 @@ for (const cols of [50, 70]) {
     expect(await ui.find({ key: 'open-SVC-1' })).toBeUndefined()
     const tree = await ui.drawn({ in: 'board-SVC' })
     // every card is a tinted Box whose height follows its title: the long one is taller than the short ones
-    const cards = nodes(tree, n => n.type === 'Box' && n.props?.borderStyle === 'round' && n.props?.backgroundColor)
+    const cards = nodes(tree, isCard)
     expect(cards.length).toBe(3)
     const cw = sections(['SVC-1'], []).sections[0].cards[0].w
     for (const k of all) expect(cards.find(c => JSON.stringify(c).includes(`"${k.key}"`))!.props.height).toBe(cardHeight(k, cw))
@@ -909,7 +912,7 @@ for (const cols of [50, 70]) {
     expect(hOf('SVC-1')).toBe(CARD_H) // capped at 3 title rows
     expect(hOf('SVC-2')).toBe(SHORT)
     expect(new Set(cards.map(c => c.props.height)).size).toBe(2)
-    expect(cards.every(c => c.props.borderStyle === 'round' && c.props.borderColor === c.props.backgroundColor)).toBe(true) // invisible border, rounded corners
+    expect(cards.every(c => c.props.borderStyle === undefined && stripeText(c).length === c.props.height)).toBe(true) // no border, a ▎ on every row
     // the long title is a wrapping Text: whole, no truncate wrap, no ellipsis
     const title = nodes(tree, n => n.type === 'Text' && JSON.stringify(n.children).includes('登录页面校验规则'))
     expect(title.length).toBe(1)
@@ -923,11 +926,14 @@ for (const cols of [50, 70]) {
     await ui.pointer({ type: 'down', x: from.x + 2, y: from.y + 2, button: 'left', in: 'board-SVC' })
     await ui.pointer({ type: 'move', x: from.x + 2, y: toY, button: 'left', in: 'board-SVC' })
     expect(await ui.find({ type: 'Text', text: / 放到 待跟进 /, in: 'board-SVC' })).toBeDefined()
+    // the dragged card's stripe turns into full blocks
+    const dragged = nodes(await ui.drawn({ in: 'board-SVC' }), isCard).find(c => JSON.stringify(c).includes('"SVC-1"'))!
+    expect(new Set(stripeText(dragged))).toEqual(new Set(['█']))
     await ui.pointer({ type: 'up', x: from.x + 2, y: toY, button: 'left', in: 'board-SVC' })
     expect(files.get(LOG)).toContain('"key":"SVC-1","col":"follow","text":"你拖拽移动"')
     // click SVC-3 (now alone in 进行中, first card): the peek opens, centered in the region
     const solo = sections(['SVC-3'], ['SVC-1', 'SVC-2']).sections[0].cards[0]
-    await click(ui, solo.x + 2, solo.y + 2)
+    await click(ui, solo.x + 2, solo.y + 1)
     expect(await ui.find({ type: 'Text', text: /打开详情/, in: 'board-SVC' })).toBeDefined()
     const h = sections(['SVC-3'], ['SVC-1', 'SVC-2']).height
     const g = peekGeo(W, h, '打开详情', 2)
@@ -935,7 +941,7 @@ for (const cols of [50, 70]) {
     // drag is off while it is open: a press on a card and release on another section moves nothing
     const moves = () => (files.get(LOG).match(/"k":"move"/g) ?? []).length
     const n = moves()
-    await ui.pointer({ type: 'down', x: solo.x + 2, y: solo.y + 2, button: 'left', in: 'board-SVC' })
+    await ui.pointer({ type: 'down', x: solo.x + 2, y: solo.y + 1, button: 'left', in: 'board-SVC' })
     await ui.pointer({ type: 'up', x: solo.x + 2, y: toY + 10, button: 'left', in: 'board-SVC' })
     expect(moves()).toBe(n)
     await click(ui, btnAt(cols, '打开详情', h).x, btnAt(cols, '打开详情', h).y)
@@ -957,7 +963,7 @@ for (const cols of [50, 70]) {
 // WB-23 (style C): accent-stripe cards.
 const TINT = { light: '#f3f4f7', dark: '#262a31' }
 const LIVE_COLOR = '#3f9a6b'
-const cardBoxes = (tree: any, tint = TINT.light) => nodes(tree, n => n.type === 'Box' && n.props?.borderStyle === 'round' && n.props?.backgroundColor === tint)
+const cardBoxes = (tree: any, tint = TINT.light) => nodes(tree, n => isCard(n) && n.props.backgroundColor === tint)
 // A desktop board: SVC-1 in 进行中 and live (its session is busy), SVC-2 in 待审核, SVC-3 done and accepted.
 async function striped($: any, on: any, cols: number, mode = 'light') {
   on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
@@ -981,17 +987,16 @@ async function striped($: any, on: any, cols: number, mode = 'light') {
 }
 
 for (const cols of [140, 60]) {
-  test(`cards at ${cols}: no border, 1-cell stripe on a tint, live color while a session works it, done folded`, async ($: any, on: any) => {
+  test(`cards at ${cols}: no border, a ▎ stripe on every row of a tint, live color while a session works it, done folded`, async ($: any, on: any) => {
     const ui = await striped($, on, cols)
     const tree = await ui.drawn({ in: 'board-SVC' })
     const cards = cardBoxes(tree)
     expect(cards.length).toBe(2) // the done card is folded away
     for (const c of cards) {
-      expect([c.props.borderStyle, c.props.borderColor]).toEqual(['round', c.props.backgroundColor])
-      const stripe = c.children[0]
-      expect([stripe.type, stripe.props.width]).toEqual(['Box', 1])
+      expect([c.props.borderStyle, c.props.borderColor]).toEqual([undefined, undefined])
+      expect(stripeText(c)).toEqual(Array(c.props.height).fill('▎'))
     }
-    const stripeOf = (key: string) => cards.find(c => JSON.stringify(c).includes(key))!.children[0].props.backgroundColor
+    const stripeOf = (key: string) => cards.find(c => JSON.stringify(c).includes(key))!.children[0].children[0].props.color
     expect(stripeOf('SVC-1')).toBe(LIVE_COLOR) // live wins over the 进行中 color
     expect(stripeOf('SVC-2')).toBe(colOf('review').color)
     expect(await ui.find({ type: 'Text', text: '做完的', in: 'board-SVC' })).toBeUndefined()
@@ -1055,34 +1060,34 @@ test('done expanded: no Chinese in en, no rules, no emoji', async ($: any, on: a
   }
 })
 
-// cardRows: the title area's rows, from the exact drawn text (code + space + rest) over the inner width (card - 5), capped at 3.
+// cardRows: the title area's rows, from the exact drawn text (code + space + rest) over the inner width (card - 3), capped at 3.
 test('cardRows / cardHeight: 1 row short, 2 medium, capped at 3; Han counts two cells', () => {
-  const w = 30 // inner width 25
+  const w = 30 // inner width 27
   expect(cardRows({ code: '', rest: 'short' }, w)).toBe(1)
-  expect(cardRows({ code: '', rest: 'a'.repeat(25) }, w)).toBe(1)
-  expect(cardRows({ code: '', rest: 'a'.repeat(26) }, w)).toBe(2)
+  expect(cardRows({ code: '', rest: 'a'.repeat(27) }, w)).toBe(1)
+  expect(cardRows({ code: '', rest: 'a'.repeat(28) }, w)).toBe(2)
   expect(cardRows({ code: '[T-42]', rest: 'a'.repeat(30) }, w)).toBe(2) // the code and its space count: 6 + 1 + 30 = 37
   expect(cardRows({ code: '', rest: 'a'.repeat(500) }, w)).toBe(3)
-  expect(cardRows({ code: '', rest: '汉'.repeat(12) }, w)).toBe(1) // 24 cells
-  expect(cardRows({ code: '', rest: '汉'.repeat(13) }, w)).toBe(2) // 26 cells: the same count in ASCII fits one row
+  expect(cardRows({ code: '', rest: '汉'.repeat(13) }, w)).toBe(1) // 26 cells
+  expect(cardRows({ code: '', rest: '汉'.repeat(14) }, w)).toBe(2) // 28 cells: the same count in ASCII fits one row
   expect(cardRows({ code: '', rest: '汉'.repeat(200) }, w)).toBe(3)
   expect(cardRows({}, 1)).toBe(1) // a width below the chrome is clamped, never divides by zero
-  expect([cardHeight({}, w), cardHeight({ rest: 'a'.repeat(26) }, w), cardHeight({ rest: 'a'.repeat(500) }, w)]).toEqual([4, 5, CARD_H])
+  expect([cardHeight({}, w), cardHeight({ rest: 'a'.repeat(28) }, w), cardHeight({ rest: 'a'.repeat(500) }, w)]).toEqual([2, 3, CARD_H])
 })
 
 // Cards are as tall as their titles; a gap row between them; a row of the grid is as tall as its tallest card.
 test('gridLayout: per-card heights, row height = tallest card, no overlap, 1-row gaps', () => {
   const t = (key: string, n: number) => ({ key, rest: 'a'.repeat(n) })
-  const one = gridLayout([{ id: 'doing', cards: [t('a', 3), t('b', 80), t('c', 30)] }], 20) // inner 15: 1, 3, 2 rows
-  expect(one.sections[0].cards.map(c => [c.y, c.h])).toEqual([[1, 4], [6, 6], [13, 5]])
-  expect(one.sections[0].h).toBe(1 + 4 + 1 + 6 + 1 + 5)
+  const one = gridLayout([{ id: 'doing', cards: [t('a', 3), t('b', 80), t('c', 30)] }], 20) // inner 17: 1, 3, 2 rows
+  expect(one.sections[0].cards.map(c => [c.y, c.h])).toEqual([[1, 2], [4, 4], [9, 3]])
+  expect(one.sections[0].h).toBe(1 + 2 + 1 + 4 + 1 + 3)
   expect(one.height).toBe(one.sections[0].h)
-  // two per row (66 wide, cards 30, inner 25): [1 row, 3 rows] then [2 rows] then a second section
+  // two per row (66 wide, cards 30, inner 27): [1 row, 3 rows] then [2 rows] then a second section
   const lay = gridLayout([{ id: 'doing', cards: [t('a', 3), t('b', 80), t('c', 40)] }, { id: 'follow', cards: [t('d', 3)] }], 66)
   const [s0, s1] = lay.sections
-  expect(s0.cards.map(c => [c.x, c.y, c.h])).toEqual([[0, 1, 4], [31, 1, 6], [0, 8, 5]]) // top-aligned; a keeps its own height, the row is 6
-  expect(s0.rowH).toEqual([6, 5])
-  expect(s0.h).toBe(1 + 6 + 1 + 5)
+  expect(s0.cards.map(c => [c.x, c.y, c.h])).toEqual([[0, 1, 2], [31, 1, 4], [0, 6, 3]]) // top-aligned; a keeps its own height, the row is 4
+  expect(s0.rowH).toEqual([4, 3])
+  expect(s0.h).toBe(1 + 4 + 1 + 3)
   expect(s1.y).toBe(s0.h + 1)
   expect(lay.height).toBe(s1.y + s1.h)
   const rects = lay.sections.flatMap(s => s.cards)
@@ -1090,7 +1095,7 @@ test('gridLayout: per-card heights, row height = tallest card, no overlap, 1-row
     expect(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y).toBe(true)
 })
 test('columnLayout: the wide column stacks its cards below the header with 1-row gaps', () => {
-  expect(columnLayout([{ key: 'a', rest: 'x' }, { key: 'b', rest: 'x'.repeat(100) }, { key: 'c' }], 20).map(c => [c.y, c.h])).toEqual([[HEAD_H, 4], [HEAD_H + 5, 6], [HEAD_H + 12, 4]])
+  expect(columnLayout([{ key: 'a', rest: 'x' }, { key: 'b', rest: 'x'.repeat(100) }, { key: 'c' }], 20).map(c => [c.y, c.h])).toEqual([[HEAD_H, 2], [HEAD_H + 3, 4], [HEAD_H + 8, 2]])
 })
 
 // Content-height cards on the real pane: wide board (140) and grid (50, 70). Titles of different lengths give cards of different heights;
@@ -1123,7 +1128,7 @@ for (const cols of [140, 50, 70]) {
     expect(c.h).toBe(SHORT)
     expect(new Set([a.h, b.h]).size).toBe(2)
     // the drawn card Boxes carry those heights
-    const drawn = nodes(await ui.drawn({ in: lane }), n => n.type === 'Box' && n.props?.borderStyle === 'round' && n.props?.backgroundColor)
+    const drawn = nodes(await ui.drawn({ in: lane }), isCard)
     expect(drawn.map(n => n.props.height).sort()).toEqual([a.h, b.h, c.h, SHORT].sort())
     const peeked = async () => (await props()).peek?.key
     // the third card starts where the layout says (a fixed step of CARD_H + 1 would put it lower): its first row opens SVC-3, the gap above it nothing
@@ -1355,8 +1360,8 @@ test('card meta row shows labels; the title height is the card\'s own row count'
       expect(left[2]).toMatch(/^#特性/)
     }
     const labelsOf = (key: string) => cards.find(c => JSON.stringify(c).includes(key))!.children[1].children[1].children[0].children[2].children.join('')
-    // 140 cols: a 22-cell column leaves 6 cells after the key and P1, so the labels are cut; the 56-cell grid card fits two
-    expect(labelsOf('SVC-1')).toBe(cols > 100 ? '#特性…' : '#特性 #缺陷')
+    // 140 cols: a 22-cell column leaves 8 cells after the key and P1, so the labels are cut; the 56-cell grid card fits two
+    expect(labelsOf('SVC-1')).toBe(cols > 100 ? '#特性 #…' : '#特性 #缺陷')
     expect(labelsOf('SVC-2').endsWith('…')).toBe(true)
     await ui.unmount()
   }

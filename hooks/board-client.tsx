@@ -3,11 +3,10 @@ import type { ClientModule } from 'claude-code'
 import type { BoardProps, CardProps, DragState } from '../types'
 
 // Geometry so a pointer cell maps back to a card: header rows (name row + 1 empty), then cards one after another, 1 empty row between them.
-// A card's height follows its title: 1 border row + 1..3 title rows + 1 meta row + 1 border row (the round border, drawn in the card's own tint,
-// is only there to round the corners; a plain background box is square). cardRows / cardHeight are the one source: the draw, the grid,
-// the pointer math, the Client's height and the tests all derive from them.
+// A card's height follows its title: 1..3 title rows + 1 meta row on a square tint block, no border. cardRows / cardHeight are the one source:
+// the draw, the grid, the pointer math, the Client's height and the tests all derive from them.
 export const HEAD_H = 2
-export const CARD_H = 6 // the maximum card height (3 title rows)
+export const CARD_H = 4 // the maximum card height (3 title rows)
 // The preview popup (Jira's issue view): absolutely positioned over the columns, centered. Shared by the pointer math, the draw and the tests.
 // Rows inside it, border = row 0: 1 header, 2 gap, 3-4 title, 5 action button, body below, footer on row h-2.
 export const PEEK_H = 16
@@ -27,9 +26,9 @@ export const clip = (str: string, n: number) => {
 // What a card draws in its title area: bracket code, a space, the rest.
 type Titled = { code?: string; rest?: string }
 const titleText = (c: Titled) => `${c.code ? `${c.code} ` : ''}${c.rest ?? ''}`
-// Title rows a card of this width needs, 1..3 (inner width = card - border 2 - stripe 1 - padding 2). Longer titles are clipped, never taller.
-export const cardRows = (c: Titled, cardWidth: number) => Math.min(3, Math.max(1, Math.ceil(cells(titleText(c)) / Math.max(1, cardWidth - 5))))
-export const cardHeight = (c: Titled, cardWidth: number) => 3 + cardRows(c, cardWidth)
+// Title rows a card of this width needs, 1..3 (inner width = card - stripe 1 - padding 2). Longer titles are clipped, never taller.
+export const cardRows = (c: Titled, cardWidth: number) => Math.min(3, Math.max(1, Math.ceil(cells(titleText(c)) / Math.max(1, cardWidth - 3))))
+export const cardHeight = (c: Titled, cardWidth: number) => 1 + cardRows(c, cardWidth)
 // rows = the board's own height; the popup grows with it up to PEEK_MAX_H. margin = cells kept free beside it (4 on the wide board, 2 on the grid).
 // The stacked layout (below PEEK_WIDE) holds both columns in one, so it starts at the maximum height.
 export const peekRect = (region: number, rows = 0, margin = 4) => {
@@ -153,17 +152,20 @@ const BoardClient: ClientModule<BoardProps, DragState> = (p, s) => {
       {c.toggle ? <Text color={surf.mute}>{c.toggle}</Text> : null}
     </Box>
   )
-  // One ticket card (accent-stripe style, no border): a 1-cell stripe in the status color (live color while a session works it), then 1-3 title rows + 1 meta row on the tint.
+  // One ticket card (accent-stripe style, no border): a ▎ on every row in the status color (live color while a session works it; a full █ while dragged),
+  // then 1-3 title rows + 1 meta row on the tint.
   // Height follows the title (cardHeight); w = fixed width in the grid, else the column's.
   const drawCard = (k: CardProps, stripe: string, w?: number) => {
     const isDragged = k.key === st.drag
-    // Inner width: card minus round border (2), stripe (1), padding (2); labels get what key and priority leave.
-    const labels = clip(k.labels, (w ?? p.colW) - 5 - cells(k.key) - (k.priority ? cells(k.priority) + 3 : 0) - 1)
+    // Inner width: card minus stripe (1), padding (2); labels get what key and priority leave.
+    const labels = clip(k.labels, (w ?? p.colW) - 3 - cells(k.key) - (k.priority ? cells(k.priority) + 3 : 0) - 1)
     const tx = { backgroundColor: surf.tint } // every card Text sits on the card's own tint
     const tr = cardRows(k, w ?? p.colW)
     return (
-      <Box key={k.key} height={3 + tr} width={w} backgroundColor={surf.tint} borderStyle="round" borderColor={surf.tint}>
-        <Box width={1} flexShrink={0} backgroundColor={isDragged ? k.color : k.live ? surf.live : stripe} />
+      <Box key={k.key} height={1 + tr} width={w} backgroundColor={surf.tint}>
+        <Box width={1} flexShrink={0} flexDirection="column" backgroundColor={surf.tint}>
+          {Array.from({ length: 1 + tr }, (_, i) => <Text key={`s${i}`} {...tx} color={isDragged ? k.color : k.live ? surf.live : stripe}>{isDragged ? '█' : '▎'}</Text>)}
+        </Box>
         <Box flexDirection="column" flexGrow={1} flexShrink={1} paddingX={1} overflow="hidden" backgroundColor={surf.tint}>
           <Box height={tr} overflow="hidden" backgroundColor={surf.tint}>
             <Text {...tx} color={k.done ? surf.mute : surf.text} dimColor={isDragged}>{k.code ? <Text {...tx} bold>{k.code}</Text> : null}{k.code ? ' ' : ''}{k.rest}</Text>
