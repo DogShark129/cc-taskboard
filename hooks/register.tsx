@@ -1,14 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, BoardProps, Col, HeaderProps, Lang, PeekProps, Priority, Resolved, Sess, Theme, Ticket, View } from '../types'
+import type { Board, Col, Lang, Priority, Resolved, Sess, Theme, Ticket, View } from '../types'
 import {
   BAD, BORDER, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
-  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, clean, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
+  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
 import type { Ev, InitPlan, K, ScanRow } from './core.ts'
-import { HEAD_H, boardHeight, clip, peekRect } from './board-client.tsx'
-import { headerLayout } from './header-client.tsx'
 
 // The tests import these from here.
 export { boardForWeek, dayLabel, fold, ownerOf, resolveTheme, sessionTitle, splitCode, weeksBack } from './core.ts'
@@ -36,15 +34,15 @@ const WEB_LINK = 'http://localhost:4790/'
 // Current UI language: session.start loads it from the store, the EN / 中文 button flips it.
 let lang: Lang = 'zh'
 const t = (key: K, ...args: (string | number)[]) => tl(lang, key, ...args)
-// Current theme setting: auto follows the Claude app (its config.json, else the OS); light / dark are fixed. Only the preview popup follows it.
+// Current theme setting: auto follows the Claude app (its config.json, else the OS); light / dark are fixed. The surface colors and the preview popup follow it.
 let theme: Theme = 'auto'
 let resolved: Resolved = 'light'
 const PALETTE: Record<Resolved, { bg: string; fg: string; border: string; mute: string }> = {
   dark: { bg: '#262b36', fg: '#dde2ea', border: '#4a5263', mute: '#8b93a3' },
   light: { bg: '#ffffff', fg: '#1f2a44', border: '#c9d1de', mute: '#6b7385' },
 }
-// The board's surface colors per theme: card tint, text levels, accent (active tab / toggles), live (a session is working it).
-const SURFACE: Record<Resolved, BoardProps['surf']> = {
+// The board's surface colors per theme: row tint (hover, open preview), text levels, accent, live (a session is working it).
+const SURFACE: Record<Resolved, { tint: string; text: string; sub: string; mute: string; accent: string; live: string }> = {
   light: { tint: '#f3f4f7', text: '#1f2a44', sub: '#5b6478', mute: '#8b93a3', accent: '#5b6cf0', live: '#3f9a6b' },
   dark: { tint: '#262a31', text: '#e3e6ec', sub: '#a6adbb', mute: '#7c8496', accent: '#8c99ff', live: '#62c08f' },
 }
@@ -57,23 +55,6 @@ const zhTitle = (tk: Ticket) => titleOf(tk, 'zh')
 // Markdown to plain words for the preview: drop heading marks, bullets, emphasis and backticks, keep the text.
 const plain = (md: string) =>
   md.split('\n').map(l => clean(l.replace(/[*`]/g, '').replace(/^\s*(#+|[-+])\s+/, ''))).filter(Boolean)
-// Same 24-grid, 2px-stroke icons as the mockup; desktop draws them through Svg; elsewhere no icon (flat: text and color only).
-const PATHS: Record<string, string> = {
-  hourglass: '<path d="M6 3h12M6 21h12M17 3v3.5a5 5 0 0 1-2 4L12 12l-3-1.5a5 5 0 0 1-2-4V3M7 21v-3.5a5 5 0 0 1 2-4L12 12l3 1.5a5 5 0 0 1 2 4V21"/>',
-  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
-  activity: '<path d="M22 12h-4l-3 8L9 4l-3 8H2"/>',
-  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16 9.5"/>',
-  flask: '<path d="M9 3h6M10 3v6L4.6 18.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3M7 15h10"/>',
-  cube: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
-  home: '<path d="M3 11 12 4l9 7"/><path d="M5.5 9.5V20h13V9.5"/>',
-  grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
-  x: '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/>',
-  layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
-}
-const svg = (name: string, color: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PATHS[name]}</svg>`
-
 
 const EMPTY: Board = { tickets: [], sessions: [], feed: [], weekStart: 0, commitsThisWeek: 0, createdThisWeek: 0 }
 const board = atom({ plugin: 'cc-taskboard', key: 'board' } as const, EMPTY)
@@ -227,7 +208,7 @@ async function emit($: $, ev: Omit<Ev, 't' | 'sid'>) {
   await refresh($)
 }
 
-// The person's comment, from the detail, the preview popup or the narrow block: one event, which also wakes the ticket's session.
+// The person's comment, from the detail or the preview (inline or popup): one event, which also wakes the ticket's session.
 const sendComment = ($: $, key: string, text: string) => (text.trim() ? emit($, { k: 'comment', key, by: 'me', text: text.trim() }) : undefined)
 
 const current = (): Ticket | undefined => (me.ticket ? findTicket(fold(all, [], Date.now()).tickets, me.ticket) : undefined)
@@ -708,34 +689,6 @@ export const register: Register = on => {
   })
 
   // ---------- 面板 ----------
-  on('ui.message', async ($, e, next) => {
-    // The header Client's clicks: the same view changes its fallback Buttons make.
-    if (e.element === 'header') {
-      const d = (e.data ?? {}) as { hdr?: string; id?: string; text?: string }
-      const v = await read($, view)
-      const maxBack = weeksBack(all, Date.now())
-      const wk = Math.min(v.week ?? 0, maxBack)
-      if (d.hdr === 'proj' && d.id && (d.id === 'ALL' || projOf(d.id))) await patchView($, { proj: d.id })
-      else if (d.hdr === 'filter' && (d.id === 'me' || d.id === 'live')) await patchView($, { [d.id]: !v[d.id] })
-      else if (d.hdr === 'seg' && (d.id === 'board' || d.id === 'feed')) await patchView($, { tab: d.id })
-      else if (d.hdr === 'nav' && d.id) await patchView($, { week: Math.max(0, Math.min(maxBack, d.id === 'prev' ? wk + 1 : d.id === 'next' ? wk - 1 : 0)), sel: null })
-      else if (d.hdr === 'theme') await setTheme($, theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto')
-      else if (d.hdr === 'lang') await setLang($, lang === 'zh' ? 'en' : 'zh')
-      else if (d.hdr === 'q' && typeof d.text === 'string') await patchView($, { q: d.text })
-      return {}
-    }
-    if (!e.element.startsWith('board-')) return next(e)
-    const d = (e.data ?? {}) as { move?: string; col?: Col; open?: string; peek?: string | null; comment?: string; text?: string; toggle?: Col; act?: string; key?: string }
-    if (d.move && d.col && COL_IDS.includes(d.col)) await personMove($, d.move, d.col, '你拖拽移动')
-    if (d.comment && typeof d.text === 'string') await sendComment($, findTicket(lastBoard?.tickets ?? [], d.comment)?.key ?? d.comment, d.text) // the popup stays open
-    if (d.peek !== undefined) await update($, view, cur => ({ ...cur, peek: d.peek }))
-    if (d.toggle === 'done') await update($, view, cur => ({ ...cur, doneOpen: !cur.doneOpen }))
-    if (d.toggle === 'canceled') await update($, view, cur => ({ ...cur, canceledOpen: !cur.canceledOpen }))
-    if (d.act && d.key) await ticketAct($, d.act, d.key) // the popup stays open on the ticket's new state
-    if (d.open) await update($, view, cur => ({ ...cur, sel: d.open ?? null, peek: null }))
-    return {}
-  })
-
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE && e.origin.kind === 'person') paneWanted = false
     return next(e)
@@ -755,13 +708,13 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const els = $.ui.resolve(e) as any
-    // Only terminal and desktop draw a Client (the d.ts tables); elsewhere resolve may still hand one out, drawn as an empty Box.
-    const hasClient = Boolean(els.Client) && (e.surface === 'terminal' || e.surface === 'desktop')
-    // Font size is not a prop; a Markdown heading is the one thing the desktop draws larger (as in a reply). Terminal keeps the bold title.
-    const bigTitle = hasClient && e.surface === 'desktop' && Boolean(els.Markdown)
+    const els = { ...($.ui.resolve(e) as any) }
+    // resolve may hand out elements a surface's table lacks, drawn as empty Boxes: terminal has no Svg, mobile no Input or Select.
+    if (e.surface === 'terminal') delete els.Svg
+    if (e.surface === 'mobile') { delete els.Input; delete els.Select }
+    // Font size is not a prop; a Markdown heading is the one thing the desktop draws larger (as in a reply). Elsewhere a bold Text title.
+    const bigTitle = e.surface === 'desktop' && Boolean(els.Markdown)
     const { Box, Text, Button } = els
-    const Svg = els.Svg as any
     const cur = await read($, board)
     const v = await read($, view)
     const maxBack = weeksBack(all, Date.now())
@@ -771,8 +724,6 @@ export const register: Register = on => {
     const now = past ? past.asOf : Date.now()
     const width = e.props.bodyColumns || 100
     const setView = (patch: Partial<View>) => patchView($, patch)
-    const icon = (name: string, color: string, glyph: string) =>
-      Svg ? <Svg source={svg(name, color)} alt={glyph} width={14} height={14} /> : null
     // Jira's small status pill: inverse text with a space of padding each side.
     const lozenge = (text: string, color?: string) => <Text color={color} inverse bold> {text} </Text>
 
@@ -788,178 +739,15 @@ export const register: Register = on => {
       (!v.me || t.col === 'decide') && (!v.live || isLive(t)) && (!q || `${t.key} ${t.title} ${t.title_en ?? ''}`.toLowerCase().includes(q)))
     const count = (col: Col, list = scope) => list.filter(t => t.col === col).length
     const surf = SURFACE[v.themeResolved ?? resolved]
-    const doneOpen = Boolean(v.doneOpen)
-    // Canceled folds like done; a search opens it (no toggle then), so archived hits show.
-    const canceledOpen = Boolean(v.canceledOpen) || Boolean(q)
-    const folded = (id: Col) => (id === 'done' && !doneOpen) || (id === 'canceled' && !canceledOpen)
-    const toggleOf = (id: Col) => t((id === 'done' ? doneOpen : canceledOpen) ? 'lane.collapse' : 'lane.expand')
-    // The Button fallback's fold toggle is `fold-done` / `fold-canceled`; with several boards in the ALL view the first one with such tickets owns that key, the others add their id.
-    const foldLane = (id: Col) => (v.proj === 'ALL' ? PROJECTS.find(p => scope.some(t => t.project === p.id && t.col === id))?.id : v.proj)
     const dueText = (tk: Ticket) => { const n = dueIn(tk, now); return n === null ? null : { text: `${t('l.due')} ${tk.due?.slice(5)}`, color: dueColor(n) } }
     const tagText = (tk: Ticket) => (tk.labels ?? []).map(l => `#${l}`).join(' ')
 
     // The person's buttons on a ticket (WB-28): confirm / keep Claude's proposal, restore a canceled one, else cancel it.
-    const actsOf = (tk: Ticket): PeekProps['acts'] =>
+    const actsOf = (tk: Ticket): { id: 'cancel' | 'confirm' | 'keep' | 'restore'; label: string }[] =>
       tk.proposeCancel ? [{ id: 'confirm', label: t('cancel.ok') }, { id: 'keep', label: t('cancel.keep') }]
         : tk.col === 'canceled' ? [{ id: 'restore', label: t('restore') }] : [{ id: 'cancel', label: t('cancel') }]
-    // Everything the preview shows, localized and cleaned: the Client popup and the narrow-pane block both draw from it.
-    const peekOf = (tk: Ticket): PeekProps => {
-      const pal = PALETTE[resolved]
-      const sess = tk.sids.map(id => {
-        const x = b.sessions.find(s => s.sid === id)
-        const st = !x || x.isGone ? t('ss.gone') : x.state === 'run' ? t('ss.run') : x.state === 'wait' ? t('waiting.you') : t('ss.idle')
-        return `${x ? x.label || x.name : id.slice(0, 6)} (${st})`
-      })
-      const blockers = openBlockers(tk, b.tickets)
-      const n = dueIn(tk, now)
-      const dueWords = n === null ? '' : n < 0 ? t('due.late', -n) : n === 0 ? t('due.today') : t('due.left', n)
-      const row = (label: string, value: string, color = pal.fg, lozenge = false) => ({ label, value, color, lozenge })
-      // Jira hides empty fields; priority and session always show.
-      const rows = [
-        tk.priority ? row(t('priority'), tk.priority, PRIORITY_COLOR[tk.priority], true) : row(t('priority'), t('none'), pal.mute),
-        tk.labels?.length ? row(t('d.labels'), tagText(tk)) : null,
-        tk.due ? row(t('d.due'), [tk.due.slice(5), dueWords].filter(Boolean).join(' · '), n === null ? pal.mute : dueColor(n)) : null,
-        blockers.length ? row(t('peek.blocked'), blockers.join(', '), BAD) : null,
-        tk.parent ? row(t('rel.parent'), tk.parent) : null,
-        sess.length ? row(t('peek.sess'), sess[0] + (sess.length > 1 ? ` +${sess.length - 1}` : '')) : row(t('peek.sess'), t('none'), pal.mute),
-        tk.branch ? row(t('d.branch'), tk.branch) : null,
-        tk.pr ? row('PR', tk.pr) : null,
-        tk.proposeCancel ? row(t('d.propose'), tk.proposeCancel.reason, BAD) : null,
-        row(t('d.stay'), `${days(tk.since, now)} ${t('l.days')}`),
-      ].filter((x): x is ReturnType<typeof row> => x !== null)
-      return {
-        key: tk.key, project: pn(tk.project), color: projOf(tk.project)?.color ?? MUTE, ...splitCode(titleOf(tk, lang)),
-        status: cn(tk.col), statusColor: colOf(tk.col).color, rows,
-        detailsTitle: t('details'), descTitle: t('desc'),
-        desc: (descOf(tk, lang) ? plain(descOf(tk, lang)) : tk.notes.map(n => `- ${plain(n).join(' ')}`)).slice(0, 6), descNone: t('desc.none'),
-        commentsTitle: `${t('comments')} ${tk.comments.length}`,
-        commentList: tk.comments.slice(-2).reverse().map(c => ({ head: `${c.by === 'me' ? t('you') : 'Claude'} · ${md(c.t)} ${hhmm(c.t)}`, text: clean(c.text) })),
-        footer: `${t('peek.created', md(tk.created))} · ${t('peek.updated', ago(lang, tk.log.at(-1)?.t ?? tk.created, now))}`,
-        open: t('peek.open'), hint: t('peek.hint'), commentPh: t('peek.cmt.ph'), send: t('peek.send'), acts: wk ? [] : actsOf(tk), ...pal,
-      }
-    }
     const findShown = (key?: string | null) => (key ? b.tickets.find(x => x.key === key) ?? archived().find(x => x.key === key) : undefined)
     const peekTk = findShown(v.peek) // a ticket that is gone shows nothing
-
-    // The Button fallback of the accent-stripe card: tint, a 1-cell stripe in the status color (live color while a session works it), no border. Its height follows its content, at most 3 title rows like the Client card.
-    const card = (tk: Ticket, stripe: string, w: number) => {
-      const age = tk.col === 'done' ? null : days(tk.since, now)
-      const done = tk.col === 'done'
-      const p = projOf(tk.project)
-      const { code, rest } = splitCode(titleOf(tk, lang))
-      const bl = openBlockers(tk, b.tickets)
-      const due = dueText(tk)
-      const tx = { backgroundColor: surf.tint }
-      return (
-        <Box key={`c-${tk.key}`} backgroundColor={surf.tint}>
-          <Box width={1} flexShrink={0} backgroundColor={isLive(tk) ? surf.live : stripe} />
-          <Box flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={surf.tint}>
-            <Button key={`open-${tk.key}`} plain dimColor={done} label={clip(code ? `${code} ${rest}` : rest, 3 * Math.max(1, w - 3))} onPress={() => setView({ peek: tk.key })} />
-            <Box justifyContent="space-between" gap={1} backgroundColor={surf.tint}>
-              <Box gap={1} flexShrink={1} backgroundColor={surf.tint}>
-                <Text {...tx} color={done ? surf.mute : p?.color ?? MUTE} bold strikethrough={done}>{tk.key}</Text>
-                {tk.priority ? lozenge(tk.priority, PRIORITY_COLOR[tk.priority]) : null}
-                {tk.labels?.length ? <Text {...tx} color={surf.mute} wrap="truncate-end">{tagText(tk)}</Text> : null}
-              </Box>
-              <Box gap={1} flexShrink={2} backgroundColor={surf.tint}>
-                {bl.length ? <Text {...tx} color={BAD}>{t('l.blocked')} {bl.join(',')}</Text> : null}
-                {due ? <Text {...tx} color={due.color}>{due.text}</Text> : null}
-                {isLive(tk) ? <Text {...tx} color={surf.live}>{t('l.live')}</Text> : null}
-                {age !== null && age > 0 ? <Text {...tx} color={age > 7 ? BAD : surf.mute}>{age}{t('l.days')}</Text> : null}
-                {tk.comments.length ? <Text {...tx} color={surf.mute}>{tk.comments.length} {t('l.comments')}</Text> : null}
-                {tk.pr ? <Text {...tx} color={surf.mute}>PR {tk.pr}</Text> : null}
-              </Box>
-            </Box>
-          </Box>
-        </Box>
-      )
-    }
-
-    // The canceled column only shows where it holds a ticket, so the usual board is six wide.
-    const shownOf = (list: Ticket[]) => COLS.filter(c => c.id !== 'canceled' || list.some(t => t.col === 'canceled'))
-    // Where the Client exists (and not for history weeks) it draws the board: six columns when they fit, else the fixed-card grid.
-    const useClient = hasClient && !wk
-    const useGrid = Math.floor((width - 4) / (COLS.length - 1)) < 18
-    const columns = (list: Ticket[], lane: string) => {
-      const shown = shownOf(list)
-      const colW = Math.floor((width - 4) / shown.length)
-      if (useClient) {
-        const grid = useGrid ? Math.max(10, width - 4) : undefined
-        const mine = peekTk && list.some(x => x.key === peekTk.key) ? peekOf(peekTk) : undefined
-        const props: BoardProps = {
-          colW,
-          ...(grid ? { grid } : {}),
-          ...(mine ? { peek: mine } : {}),
-          surf,
-          labels: { dropTo: t('l.dropTo'), comments: t('l.comments'), days: t('l.days'), blocked: t('l.blocked'), live: t('l.live'), cancelOk: t('cancel.ok'), keep: t('cancel.keep') },
-          ...(list.some(t => t.col === 'canceled') ? {} : { dropCancel: { name: cn('canceled'), color: colOf('canceled').color } }),
-          cols: shown.filter(c => !grid || list.some(t => t.col === c.id)).map(c => {
-            const items = list.filter(t => t.col === c.id)
-            // done and canceled start folded: header, count and toggle only
-            return {
-            id: c.id, name: cn(c.id), color: c.color, count: items.length,
-            ...((c.id === 'done' || (c.id === 'canceled' && !q)) && items.length ? { toggle: toggleOf(c.id) } : {}),
-            cards: (folded(c.id) ? [] : items).map(t => {
-              const age = t.col === 'done' ? 0 : days(t.since, now)
-              return {
-                key: t.key, ...splitCode(titleOf(t, lang)), color: projOf(t.project)?.color ?? MUTE, src: t.src, live: isLive(t), done: t.col === 'done',
-                age: age > 0 ? age : null, ageColor: age > 7 ? BAD : surf.mute, pr: t.pr ?? '',
-                priority: t.priority ?? '', priorityColor: PRIORITY_COLOR[t.priority ?? 'P2'], comments: t.comments.length,
-                labels: tagText(t), due: dueText(t)?.text ?? '', dueColor: dueText(t)?.color ?? MUTE, blocked: openBlockers(t, b.tickets).join(','),
-                ...(t.proposeCancel ? { propose: true } : {}),
-              }
-            }),
-            }
-          }),
-        }
-        const region = grid ?? shown.length * colW + shown.length - 1
-        const base = boardHeight(props.cols, colW, grid)
-        const rows = Math.max(base, mine ? peekRect(region, base, grid ? 2 : 4).h + 2 : 0) // popup height, plus 2
-        return <els.Client key={`board-${lane}`} module="./board-client.tsx" props={props} width={region} height={rows} />
-      }
-      // Bold status-colored name + muted count; the done and canceled columns fold (default) behind a plain toggle Button.
-      const head = (c: (typeof COLS)[number], n: number) => (
-        <Box flexGrow={1} justifyContent="space-between" gap={1}>
-          <Box gap={1}><Text bold color={c.color}>{cn(c.id)}</Text><Text color={surf.mute}>{n}</Text></Box>
-          {(c.id === 'done' || (c.id === 'canceled' && !q)) && n ? (
-            <Button key={lane === foldLane(c.id) ? `fold-${c.id}` : `fold-${c.id}-${lane}`} plain label={toggleOf(c.id)}
-              onPress={() => setView(c.id === 'done' ? { doneOpen: !doneOpen } : { canceledOpen: !Boolean(v.canceledOpen) })} />
-          ) : null}
-        </Box>
-      )
-      // ponytail: the 3-row cap is a clip to 3 x inner width cells; a wrap at word breaks may still show fewer, never more rows
-      const cards = (c: (typeof COLS)[number], items: Ticket[], w: number) =>
-        folded(c.id) ? null : <Box flexDirection="column" gap={1}>{items.map(x => card(x, c.color, w))}</Box>
-      if (colW < 18) {
-        // Narrow pane: stack the columns as sections.
-        return (
-          <Box flexDirection="column" gap={1}>
-            {shown.map(c => {
-              const items = list.filter(t => t.col === c.id)
-              return items.length === 0 ? null : (
-                <Box key={`s-${c.id}`} flexDirection="column">
-                  {head(c, items.length)}
-                  {cards(c, items, Math.max(10, width - 4))}
-                </Box>
-              )
-            })}
-          </Box>
-        )
-      }
-      return (
-        <Box gap={1}>
-          {shown.map(c => {
-            const items = list.filter(t => t.col === c.id)
-            return (
-              <Box key={`col-${c.id}`} flexDirection="column" width={colW}>
-                <Box height={HEAD_H}>{head(c, items.length)}</Box>
-                {cards(c, items, colW)}
-              </Box>
-            )
-          })}
-        </Box>
-      )
-    }
 
     // ----- detail -----
     const sel = findShown(v.sel)
@@ -1160,144 +948,255 @@ export const register: Register = on => {
       )
     }
 
-    // ----- board / feed -----
-    const live = wk ? [] : b.sessions.filter(s => s.state !== 'idle' && (v.proj === 'ALL' || s.project === v.proj))
-    const left = Math.floor((b.weekStart + 7 * 86_400_000 - now) / 86_400_000)
-    // Header, the same at every width (rows wrap): plain text buttons; the active tab / segment is a styled Text (a Button has no bold, underline or color), and is no-op to press anyway.
-    const title = <Text wrap="truncate-end"><Text bold color={surf.text}>{t('board.title', proj ? pn(proj.id) : t('all.projects'))}</Text><Text color={surf.mute}> W{isoWeek(now)}</Text></Text>
-    const link = els.Link ? <els.Link key="web-link" href={WEB_LINK} label={t('w.link')} /> : null
+    // ----- board / feed: the focus list (WB-29, mockup v2 option A), native elements only -----
+    const wide = width >= 80
+    const off = v.off ?? []
+    const more = v.more ?? []
+    const doneOpen = Boolean(v.doneOpen)
+    // Canceled folds like done; a search opens it, so archived hits show.
+    const canceledOpen = Boolean(v.canceledOpen) || Boolean(q)
+    const openOf = (c: Col) => (c === 'todo' ? Boolean(v.todoOpen) : c === 'done' ? doneOpen : canceledOpen)
+    const showProj = wide && v.proj === 'ALL'
+
+    // Header
+    const boardTitle = t('board.title', proj ? pn(proj.id) : t('all.projects'))
+    const title = bigTitle
+      ? <els.Markdown key="board-title" text={`## ${boardTitle} · W${isoWeek(now)}`} />
+      : <Text wrap="truncate-end"><Text bold color={surf.text}>{boardTitle}</Text><Text color={surf.mute}> W{isoWeek(now)}</Text></Text>
     const nav = [
       wk < maxBack ? <Button key="wk-prev" plain label={t('wk.prev', isoWeek(b.weekStart - 86_400_000))} onPress={() => setView({ week: wk + 1, sel: null })} /> : null,
       wk > 0 ? <Button key="wk-next" plain label={t('wk.next', isoWeek(b.weekStart + 8 * 86_400_000))} onPress={() => setView({ week: wk - 1, sel: null })} /> : null,
       wk > 1 ? <Button key="wk-now" plain label={t('wk.now')} onPress={() => setView({ week: 0, sel: null })} /> : null,
     ]
-    const meta = (
-      <Text color={surf.mute}>
-        {md(b.weekStart)} ~ {md(b.weekStart + 6.5 * 86_400_000)}{wk ? '' : ` · ${t('left', Math.max(0, left))}`} · {t('stats', b.createdThisWeek, count('done', projScope), b.commitsThisWeek)}{wk ? ` · ${t('week.ro')}` : ''}
-      </Text>
-    )
-    const tab = (id: string, key: string, label: string, active: boolean) =>
-      active ? <Box key={key}><Text bold underline color={surf.accent}>{label}</Text></Box> : <Button key={key} plain label={label} onPress={() => setView({ proj: id })} />
-    const projects = [
-      ...PROJECTS.map(p => {
-        const wait = count('decide', b.tickets.filter(t => t.project === p.id))
-        return (
-          <Box key={`pj-${p.id}`} gap={1}>
-            {width < 70 ? null : icon(p.icon, p.color, pn(p.id))}
-            {tab(p.id, `p-${p.id}`, pn(p.id), v.proj === p.id)}
-            {wait ? <Text color={BAD}>{wait}</Text> : null}
-          </Box>
-        )
-      }),
-      <Box key="pj-ALL" gap={1}>
-        {width < 70 ? null : icon('layers', MUTE, t('all'))}
-        {tab('ALL', 'p-ALL', t('all'), v.proj === 'ALL')}
-      </Box>,
-    ]
-    // Filters stay Buttons (pressing again turns them off): bright when on, dim when off.
-    const quick = [
-      <Button key="qf-me" plain dimColor={!v.me} label={t('qf.me')} onPress={() => setView({ me: !v.me })} />,
-      <Button key="qf-live" plain dimColor={!v.live} label={t('qf.live')} onPress={() => setView({ live: !v.live })} />,
-    ]
+    const liveN = b.tickets.filter(x => (v.proj === 'ALL' || x.project === v.proj) && isLive(x)).length
+    const tabs = [{ id: 'ALL', label: t('all') }, ...PROJECTS.map(p => ({ id: p.id, label: pn(p.id) }))].map(({ id, label }) => {
+      const wait = id === 'ALL' ? 0 : count('decide', b.tickets.filter(x => x.project === id))
+      return (
+        <Box key={`pj-${id}`} gap={1}>
+          {v.proj === id ? <Text bold underline color={surf.text}>{label}</Text> : <Button key={`p-${id}`} plain label={label} onPress={() => setView({ proj: id })} />}
+          {wait ? <Text color={BAD}>{wait}</Text> : null}
+        </Box>
+      )
+    })
     const seg = (id: 'board' | 'feed') => {
-      const label = t(`tab.${id}` as K)
-      return v.tab === id ? <Box key={`tab-${id}`}><Text bold color={surf.text}>{label}</Text></Box> : <Button key={`tab-${id}`} plain label={label} onPress={() => setView({ tab: id })} />
+      const label = t(id === 'board' ? 'tab.board' : 'hdr.feed')
+      return v.tab === id ? <Text key={`tab-${id}`} bold color={surf.text}>{label}</Text> : <Button key={`tab-${id}`} plain label={label} onPress={() => setView({ tab: id })} />
     }
-    const search = els.Input ? (
-      <Box width={Math.max(10, Math.min(40, width - 4))}>
-        <els.Input key="search" placeholder={t('search.ph')} value={v.q ?? ''} onInput={(text: string) => setView({ q: text })} onSubmit={(text: string) => setView({ q: text })} />
+    const header = (
+      <Box flexDirection="column">
+        <Box justifyContent="space-between" gap={1}>
+          <Box flexShrink={1}>{title}</Box>
+          <Box gap={2} flexShrink={0}>
+            <Button key="theme" plain label={t(`theme.${theme}` as K)} onPress={() => setTheme($, theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto')} />
+            <Button key="lang" plain label={t('lang.btn')} onPress={() => setLang($, lang === 'zh' ? 'en' : 'zh')} />
+          </Box>
+        </Box>
+        <Box justifyContent="space-between" gap={1} flexWrap="wrap">
+          <Text color={surf.mute}>
+            {md(b.weekStart)} ~ {md(b.weekStart + 6.5 * 86_400_000)} · {t('h.new')} {b.createdThisWeek} · {t('h.done')} {count('done', projScope)} · {t('l.live')} <Text color={surf.live}>{liveN}</Text>{wk ? ` · ${t('week.ro')}` : ''}
+          </Text>
+          <Box gap={2}>{nav}</Box>
+        </Box>
+        <Box gap={2} flexWrap="wrap" marginTop={1}>{tabs}</Box>
+        <Box justifyContent="space-between" gap={1} flexWrap="wrap">
+          <Box gap={2} flexWrap="wrap">
+            {/* Filters stay Buttons (pressing again turns them off): bright when on, dim when off. */}
+            <Button key="qf-me" plain dimColor={!v.me} label={t('qf.me')} onPress={() => setView({ me: !v.me })} />
+            <Button key="qf-live" plain dimColor={!v.live} label={t('qf.live')} onPress={() => setView({ live: !v.live })} />
+            {els.Input ? (
+              <Box width={wide ? 30 : Math.max(12, width - 36)}>
+                <els.Input key="search" placeholder={t('hdr.search')} value={v.q ?? ''} onInput={(text: string) => setView({ q: text })} onSubmit={(text: string) => setView({ q: text })} />
+              </Box>
+            ) : null}
+          </Box>
+          <Box gap={2}>{seg('board')}{seg('feed')}</Box>
+        </Box>
       </Box>
-    ) : null
-    const liveLine = live.map((s, i) => (
-      <Text key={`live-${s.sid}`}>{i ? '  ' : ''}{s.name}{s.ticket ? ` → ${s.ticket}` : ''}{s.state === 'wait' ? ` · ${t('waiting.you')}` : ''}</Text>
-    ))
-    // Where the Client exists the header is drawn by one (mockup C: bold / underline / color as text); the Buttons above stay the fallback.
-    const header = (() => {
-      if (!hasClient) return null
-      const hp: HeaderProps = {
-        width: Math.max(10, width - 4),
-        // On the desktop the title is a Markdown heading above the Client (drawn larger); the Client then starts with the meta line.
-        title: bigTitle ? '' : t('board.title', proj ? pn(proj.id) : t('all.projects')), week: bigTitle ? '' : ` W${isoWeek(now)}`,
-        meta: `${md(b.weekStart)} ~ ${md(b.weekStart + 6.5 * 86_400_000)}${wk ? '' : ` · ${t('left', Math.max(0, left))}`} · ${t('stats', b.createdThisWeek, count('done', projScope), b.commitsThisWeek)}${wk ? ` · ${t('week.ro')}` : ''}`,
-        nav: [
-          ...(wk < maxBack ? [{ id: 'prev' as const, label: t('wk.prev', isoWeek(b.weekStart - 86_400_000)) }] : []),
-          ...(wk > 0 ? [{ id: 'next' as const, label: t('wk.next', isoWeek(b.weekStart + 8 * 86_400_000)) }] : []),
-          ...(wk > 1 ? [{ id: 'now' as const, label: t('wk.now') }] : []),
-        ],
-        tabs: [
-          ...PROJECTS.map(p => ({ id: p.id, label: pn(p.id), decide: count('decide', b.tickets.filter(t => t.project === p.id)), active: v.proj === p.id })),
-          { id: 'ALL', label: t('all'), decide: 0, active: v.proj === 'ALL' },
-        ],
-        filters: [{ id: 'me', label: t('qf.me'), on: Boolean(v.me) }, { id: 'live', label: t('qf.live'), on: Boolean(v.live) }],
-        segs: [{ id: 'board', label: t('tab.board'), active: v.tab === 'board' }, { id: 'feed', label: t('hdr.feed'), active: v.tab === 'feed' }],
-        search: { q: v.q ?? '', placeholder: t('hdr.search') },
-        live: live.length ? t('live.on') + live.map((s, i) => `${i ? '  ' : ''}${s.name}${s.ticket ? ` → ${s.ticket}` : ''}${s.state === 'wait' ? ` · ${t('waiting.you')}` : ''}`).join('') : '',
-        web: { label: t('w.link'), href: WEB_LINK }, theme: t(`theme.${theme}` as K), lang: t('lang.btn'),
-        surf: { text: surf.text, sub: surf.sub, mute: surf.mute, accent: surf.accent, live: surf.live, decide: BAD },
-      }
-      const client = <els.Client key="header" module="./header-client.tsx" props={hp} width={hp.width} height={headerLayout(hp, hp.width).height} />
-      return bigTitle ? (
-        <Box flexDirection="column">
-          <els.Markdown key="board-title" text={`## ${t('board.title', proj ? pn(proj.id) : t('all.projects'))} · W${isoWeek(now)}`} />
-          {client}
-        </Box>
-      ) : client
-    })()
-    return (
-      <Box flexDirection="column" paddingX={1} gap={1}>
-        {header ?? (
-        <Box flexDirection="column" gap={1}>
-        <Box flexDirection="column">
-          <Box justifyContent="space-between" gap={1} flexWrap="wrap">
-            {title}
-            <Box gap={1}>
-              {nav}
-              {link}
-              <Button key="theme" plain label={t(`theme.${theme}` as K)} onPress={() => setTheme($, theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto')} />
-              <Button key="lang" plain label={t('lang.btn')} onPress={() => setLang($, lang === 'zh' ? 'en' : 'zh')} />
-            </Box>
-          </Box>
-          {meta}
-        </Box>
-        <Box flexDirection="column">
-          <Box gap={2} flexWrap="wrap">{projects}</Box>
-          <Box justifyContent="space-between" gap={1} flexWrap="wrap">
-            <Box gap={2}>{quick}</Box>
-            <Box gap={1}>{seg('board')}{seg('feed')}</Box>
-          </Box>
-          {search}
-        </Box>
-        {live.length ? <Text color={surf.live} wrap="truncate-end">{t('live.on')}{liveLine}</Text> : null}
-        </Box>
-        )}
+    )
 
-        {peekTk && !useClient && v.tab === 'board' ? (() => {
-          const k = peekOf(peekTk)
+    // Status ribbon and legend: every status in scope, sized by count; a legend press hides / shows one.
+    const ORDER: Col[] = ['decide', 'doing', 'review', 'follow', 'todo', 'done', 'canceled']
+    const present = ORDER.filter(c => count(c) > 0)
+    const shown = present.filter(c => !off.includes(c))
+    const total = shown.reduce((n, c) => n + count(c), 0)
+    const ribbon = (() => {
+      if (!total) return null
+      if (els.Svg) {
+        let x = 0
+        const rects = shown.map(c => {
+          const w = ((1000 - 2 * (shown.length - 1)) * count(c)) / total
+          const r = `<rect x="${x.toFixed(1)}" width="${w.toFixed(1)}" height="6" fill="${colOf(c).color}"/>`
+          x += w + 2
+          return r
+        }).join('')
+        const source = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="6" viewBox="0 0 1000 6" preserveAspectRatio="none"><clipPath id="rb"><rect width="1000" height="6" rx="3"/></clipPath><g clip-path="url(#rb)">${rects}</g></svg>`
+        return <els.Svg key="ribbon" source={source} alt={shown.map(c => `${cn(c)} ${count(c)}`).join(' · ')} height={6} />
+      }
+      // Terminal: one line of runs, width - 4 cells; every status at least one, the largest takes the rounding.
+      const n = Math.max(shown.length, width - 4)
+      const lens = shown.map(c => Math.max(1, Math.floor((n * count(c)) / total)))
+      const big = lens.indexOf(Math.max(...lens))
+      lens[big] = (lens[big] ?? 1) + n - lens.reduce((a, l) => a + l, 0)
+      return <Text key="ribbon">{shown.map((c, i) => <Text key={`rb-${c}`} color={colOf(c).color}>{'▇'.repeat(Math.max(1, lens[i] ?? 1))}</Text>)}</Text>
+    })()
+    const legend = present.length ? (
+      <Box gap={2} flexWrap="wrap">
+        {present.map(c => {
+          const hidden = off.includes(c)
           return (
-            <Box flexDirection="column" borderStyle="round" borderColor={BORDER} paddingX={1}>
-              <Box gap={1} flexWrap="wrap">
-                <Text color={MUTE}>{k.project} /</Text>
-                <Text color={k.color} bold>{k.key}</Text>
-                {lozenge(k.status, k.statusColor)}
-              </Box>
-              <Text>{k.code ? <Text bold>{k.code} </Text> : null}<Text bold>{k.rest}</Text></Text>
-              <Text color={MUTE} bold>{k.descTitle}</Text>
-              {k.desc.length ? k.desc.map((l, i) => <Text key={`pd${i}`}>{l}</Text>) : <Text color={MUTE}>{k.descNone}</Text>}
-              <Text color={MUTE} bold>{k.commentsTitle}</Text>
-              {k.commentList.map((c, i) => <Text key={`pc${i}`}><Text color={MUTE}>{c.head} </Text>{c.text}</Text>)}
-              <Text color={MUTE} bold>{k.detailsTitle}</Text>
-              {k.rows.map(r => <Text key={`pr-${r.label}`}><Text color={MUTE}>{r.label} </Text>{r.lozenge ? lozenge(r.value, r.color) : <Text color={r.color}>{r.value}</Text>}</Text>)}
-              <Text color={MUTE}>{k.footer}</Text>
-              {els.Input ? <els.Input key="peek-comment" label={t('peek.cmt.label', k.key)} placeholder={k.commentPh} submitLabel={k.send} onSubmit={(text: string) => void sendComment($, k.key, text)} /> : null}
-              <Box gap={1}>
-                <Button key="peek-open" label={k.open} variant="primary" onPress={() => setView({ sel: peekTk.key, peek: null })} />
-                <Button key="peek-close" label={t('peek.close')} onPress={() => setView({ peek: null })} />
-                {k.acts.map(a => <Button key={`peek-${a.id}`} label={a.label} onPress={() => ticketAct($, a.id, k.key)} />)}
-              </Box>
+            <Box key={`lg-${c}`} gap={1}>
+              <Text color={colOf(c).color} dimColor={hidden}>●</Text>
+              <Button key={`legend-${c}`} plain dimColor={hidden} label={`${cn(c)} ${count(c)}`} onPress={() => setView({ off: hidden ? off.filter(x => x !== c) : [...off, c] })} />
             </Box>
           )
-        })() : null}
+        })}
+      </Box>
+    ) : null
 
+    // The preview of one ticket: inline under its row (narrow) or in the popup over the list (wide). Past weeks are read-only.
+    const preview = (tk: Ticket, c: { fg?: string; mute: string }, popup: boolean) => {
+      const desc = descOf(tk, lang) ? plain(descOf(tk, lang)) : tk.notes.map(n => `- ${plain(n).join(' ')}`)
+      const toCol = async (to: string) => {
+        if (to === tk.col) return
+        const col = to as Col
+        await personMove($, tk.key, col, '你手动移动')
+        // The ticket goes where it now belongs: that section shown, a folded one opened.
+        await update($, view, cur => ({
+          ...cur, peek: null, off: (cur.off ?? []).filter(x => x !== col),
+          ...(col === 'todo' ? { todoOpen: true } : col === 'done' ? { doneOpen: true } : col === 'canceled' ? { canceledOpen: true } : {}),
+        }))
+      }
+      const toPri = (p: string) => { if (p !== (tk.priority ?? '')) void emit($, { k: 'meta', key: tk.key, meta: { priority: p as Priority } }) } // '' clears it
+      return [
+        <Box key="pv-line" gap={1} flexWrap="wrap">
+          {wk ? <Text color={colOf(tk.col).color}>● {cn(tk.col)}</Text> : els.Select ? (
+            <Box gap={1}>
+              <els.Select key="peek-status" value={tk.col} options={COLS.map(x => ({ value: x.id, label: cn(x.id) }))} onSelect={toCol} />
+              <els.Select key="peek-priority" value={tk.priority ?? ''} options={[{ value: '', label: t('none') }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} onSelect={toPri} />
+            </Box>
+          ) : null}
+          <Button key="peek-open" label={t('peek.open')} variant="primary" onPress={() => setView({ sel: tk.key, peek: null })} />
+          {wk ? null : actsOf(tk).map(a => <Button key={`peek-${a.id}`} label={a.label} onPress={() => ticketAct($, a.id, tk.key)} />)}
+        </Box>,
+        // Surfaces without Select (mobile): the detail page's button rows.
+        !wk && !els.Select ? (
+          <Box key="pv-moves" flexDirection="column">
+            <Box gap={1} flexWrap="wrap">
+              <Text color={c.mute}>{t('move.to')}</Text>
+              {COLS.filter(x => x.id !== tk.col).map(x => <Button key={`peek-mv-${x.id}`} label={cn(x.id)} onPress={() => toCol(x.id)} />)}
+            </Box>
+            <Box gap={1}>
+              <Text color={c.mute}>{t('priority')}</Text>
+              {PRIORITIES.map(p => <Button key={`peek-pri-${p}`} label={p} variant={tk.priority === p ? 'primary' : 'secondary'} onPress={() => toPri(p)} />)}
+            </Box>
+          </Box>
+        ) : null,
+        <Box key="pv-desc" flexDirection="column">
+          <Text color={c.mute} bold>{t('desc')}</Text>
+          {desc.length ? desc.slice(0, 3).map((l, i) => <Text key={`pd${i}`} color={c.fg}>{l}</Text>) : <Text color={c.mute}>{t('desc.none')}</Text>}
+        </Box>,
+        <Box key="pv-comments" flexDirection="column">
+          <Text color={c.mute} bold>{t('comments')} {tk.comments.length}</Text>
+          {tk.comments.slice(-2).map((cm, i) => (
+            <Text key={`pc${i}`} color={c.fg}><Text color={c.mute}>{cm.by === 'me' ? t('you') : 'Claude'} · {md(cm.t)} {hhmm(cm.t)} </Text>{clean(cm.text)}</Text>
+          ))}
+          {wk || !els.Input ? null : <els.Input key="peek-comment" placeholder={t('peek.cmt.ph')} submitLabel={t('peek.send')} onSubmit={(text: string) => void sendComment($, tk.key, text)} />}
+        </Box>,
+        <Text key="pv-foot" color={c.mute}>
+          {t('peek.created', md(tk.created))} · {t('peek.updated', ago(lang, tk.log.at(-1)?.t ?? tk.created, now))}{popup ? '' : ` · ${t('peek.fold')}`}
+        </Text>,
+      ]
+    }
+
+    // One ticket, one line: the title is a plain Button, clipped to what the right-side items leave.
+    const row = (tk: Ticket) => {
+      const closed = tk.col === 'done' || tk.col === 'canceled'
+      const pc = projOf(tk.project)?.color ?? MUTE
+      const { code, rest } = splitCode(titleOf(tk, lang))
+      const due = dueText(tk)
+      const age = closed ? 0 : days(tk.since, now)
+      const right = [
+        tk.priority === 'P0' || tk.priority === 'P1' ? { text: ` ${tk.priority} `, color: PRIORITY_COLOR[tk.priority], pill: true } : null,
+        due,
+        tk.proposeCancel ? { text: t('d.propose'), color: BAD } : null,
+        isLive(tk) ? { text: t('l.live'), color: surf.live } : null,
+        wide && tk.comments.length ? { text: `${tk.comments.length} ✎`, color: surf.mute } : null,
+        { text: tk.key, color: wide ? surf.mute : pc },
+        age > 0 ? { text: `${age}${t('l.days')}`, color: age > 7 ? WARN : surf.mute } : null,
+      ].filter((x): x is { text: string; color: string; pill?: boolean } => x !== null)
+      // ponytail: cells are terminal cells; the desktop font runs narrower, so 4 spare cells keep the row on one line there too
+      const room = width - 2 - (showProj ? 5 : 0) - right.reduce((n, r) => n + cells(r.text) + 1, 0) - 4
+      const open = v.peek === tk.key
+      const line = (
+        <Box key={`row-${tk.key}`} gap={1} backgroundColor={!wide && open ? surf.tint : undefined} hover={{ backgroundColor: surf.tint }}>
+          {showProj ? <Box width={4} flexShrink={0}><Text bold color={pc} wrap="truncate-end">{tk.project}</Text></Box> : null}
+          <Box flexGrow={1} flexShrink={1}>
+            <Button key={`open-${tk.key}`} plain dimColor={closed} label={clip(code ? `${code} ${rest}` : rest, Math.max(6, room))}
+              onPress={() => setView({ peek: !wide && open ? null : tk.key })} />
+          </Box>
+          {right.map((r, i) => <Text key={`r${i}`} color={r.color} inverse={r.pill} bold={r.pill}>{r.text}</Text>)}
+        </Box>
+      )
+      if (wide || !open) return [line]
+      return [
+        line,
+        <Box key={`pv-${tk.key}`} flexDirection="column" backgroundColor={surf.tint} paddingX={1}>
+          <Text bold>{code ? `${code} ` : ''}{rest}</Text>
+          {preview(tk, { mute: surf.mute }, false)}
+        </Box>,
+      ]
+    }
+
+    // A status section: colored dot, bold name, muted count; narrow decide shows its first 5 behind a more / less Button.
+    const section = (c: Col, cap = 0) => {
+      const items = scope.filter(x => x.col === c)
+      if (off.includes(c) || !items.length) return null
+      const capped = cap > 0 && items.length > cap
+      const expanded = more.includes(c)
+      return (
+        <Box key={`sec-${c}`} flexDirection="column">
+          <Box gap={1}>
+            <Text color={colOf(c).color}>●</Text>
+            <Text bold color={surf.text}>{cn(c)}</Text>
+            <Text color={surf.mute}>{items.length}</Text>
+            {capped ? <Button key={`more-${c}`} plain dimColor label={expanded ? t('lane.collapse') : t('more.n', items.length - cap)}
+              onPress={() => setView({ more: expanded ? more.filter(x => x !== c) : [...more, c] })} /> : null}
+          </Box>
+          {(capped && !expanded ? items.slice(0, cap) : items).flatMap(row)}
+        </Box>
+      )
+    }
+    const FOLDS: Col[] = ['todo', 'done', 'canceled']
+    const foldRow = (
+      <Box key="folds" justifyContent="space-between" gap={1} flexWrap="wrap">
+        <Box gap={2} flexWrap="wrap">
+          {FOLDS.map(c => count(c) ? (
+            <Box key={`fd-${c}`} gap={1}>
+              <Text color={colOf(c).color}>●</Text>
+              <Button key={`fold-${c}`} plain dimColor label={`${cn(c)} ${count(c)} ${openOf(c) ? '⌄' : '›'}`}
+                onPress={() => setView(c === 'todo' ? { todoOpen: !v.todoOpen } : c === 'done' ? { doneOpen: !doneOpen } : { canceledOpen: !v.canceledOpen })} />
+            </Box>
+          ) : null)}
+        </Box>
+        {els.Link ? <els.Link key="web-link" href={WEB_LINK} label={t('w.link')} /> : null}
+      </Box>
+    )
+    const pal = PALETTE[v.themeResolved ?? resolved]
+    const popup = wide && peekTk ? (
+      <Box key="peek-pop" position="absolute" top={0} left={2} right={2} flexDirection="column" borderStyle="round" borderColor={BORDER} backgroundColor={pal.bg} paddingX={1}>
+        <Box justifyContent="space-between" gap={1}>
+          <Text><Text color={pal.mute}>{pn(peekTk.project)} / </Text><Text bold color={projOf(peekTk.project)?.color ?? MUTE}>{peekTk.key}</Text></Text>
+          <Button key="peek-close" plain label="×" onPress={() => setView({ peek: null })} />
+        </Box>
+        <Text bold color={pal.fg}>{titleOf(peekTk, lang)}</Text>
+        {preview(peekTk, { fg: pal.fg, mute: pal.mute }, true)}
+      </Box>
+    ) : null
+
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1}>
+        {header}
+        {v.tab === 'board' && (ribbon || legend) ? <Box flexDirection="column">{ribbon}{legend}</Box> : null}
         {v.tab === 'feed' ? (
           <Box flexDirection="column">
             {b.feed.filter(f => v.proj === 'ALL' || f.key.startsWith(`${v.proj}-`)).slice(0, Math.max(5, (e.viewport?.rows ?? 30) - 12)).map((f, i) => (
@@ -1309,28 +1208,14 @@ export const register: Register = on => {
           </Box>
         ) : !PROJECTS.length ? (
           <Text color={MUTE}>{t('empty.noboards')}</Text>
-        ) : v.proj === 'ALL' ? (
-          <Box flexDirection="column" gap={1}>
-            {PROJECTS.map(p => {
-              const list = scope.filter(t => t.project === p.id)
-              const isFolded = (v.collapsed ?? []).includes(p.id)
-              const toggle = () => setView({ collapsed: isFolded ? (v.collapsed ?? []).filter(x => x !== p.id) : [...(v.collapsed ?? []), p.id] })
-              return (
-                <Box key={`lane-${p.id}`} flexDirection="column">
-                  <Box gap={1} flexWrap="wrap">
-                    {icon(p.icon, p.color, pn(p.id))}
-                    <Text bold color={p.color}>{pn(p.id)}</Text>
-                    <Text color={MUTE}>{t('lane.count', list.length)}</Text>
-                    <Button key={`fold-${p.id}`} plain label={isFolded ? t('lane.expand') : t('lane.collapse')} onPress={toggle} />
-                    {isFolded ? COLS.map(c => count(c.id, list) ? <Text key={`sum-${p.id}-${c.id}`} color={MUTE}>{cn(c.id)} {count(c.id, list)}</Text> : null) : null}
-                  </Box>
-                  {isFolded ? null : list.length ? columns(list, p.id) : <Text color={MUTE}>  {t('lane.empty')}</Text>}
-                </Box>
-              )
-            })}
-          </Box>
         ) : (
-          scope.length ? columns(scope, v.proj) : <Text color={MUTE}>{t(filtered ? 'empty.filter' : wk ? 'empty.past' : 'empty.week')}</Text>
+          <Box flexDirection="column" gap={1}>
+            {scope.length ? (['decide', 'doing', 'review', 'follow'] as Col[]).map(c => section(c, !wide && c === 'decide' ? 5 : 0))
+              : <Text color={MUTE}>{t(filtered ? 'empty.filter' : wk ? 'empty.past' : 'empty.week')}</Text>}
+            {foldRow}
+            {FOLDS.filter(openOf).map(c => section(c))}
+            {popup}
+          </Box>
         )}
       </Box>
     )

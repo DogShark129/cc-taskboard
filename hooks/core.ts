@@ -89,6 +89,8 @@ export const ZH = {
   'hdr.search': '搜索…', 'hdr.feed': '动态',
   'l.live': '在做', 'live.on': '在做：', 'd.worktree': '工作树', 'toast.woke': '{0}：收到评论，开始处理', 'fold.commit': '提交 {0}',
   'w.wk': 'W{0}', 'w.sprint': '本周', 'w.activity.none': '暂无活动', 'w.close': '关闭', 'w.lanes': '全部 · 泳道', 'w.sess': '{0} 个会话在做', 'w.err': '操作失败：{0}',
+  // the pane's focus list (WB-29)
+  'h.new': '新建', 'h.done': '完成', 'more.n': '还有 {0} 张 ›', 'peek.fold': '再点一次标题收起',
 }
 export const I18N: Record<Lang, typeof ZH> = {
   zh: ZH,
@@ -133,6 +135,7 @@ export const I18N: Record<Lang, typeof ZH> = {
     'hdr.search': 'Search…', 'hdr.feed': 'Feed',
     'l.live': 'live', 'live.on': 'Working: ', 'd.worktree': 'Worktree', 'toast.woke': '{0}: got a comment, working on it', 'fold.commit': 'Commit {0}',
     'w.wk': 'W{0}', 'w.sprint': 'This week', 'w.activity.none': 'No activity', 'w.close': 'Close', 'w.lanes': 'All · lanes', 'w.sess': '{0} sessions working', 'w.err': 'Failed: {0}',
+    'h.new': 'new', 'h.done': 'done', 'more.n': '{0} more ›', 'peek.fold': 'click the title again to fold',
   },
 }
 // Move reasons are stored as Chinese in the event log; known ones are translated when folding for en, the rest pass through.
@@ -183,6 +186,15 @@ export const dueColor = (n: number) => (n < 0 ? BAD : n <= 2 ? WARN : MUTE)
 export const parseLabels = (xs: string[]) => [...new Set(xs.map(x => x.trim().replace(/^#/, '')).filter(Boolean))]
 // Flat style: text, color and thin rules only; imported Obsidian notes carry emoji, so strip them at display.
 export const clean = (s: string) => s.replace(/\p{Extended_Pictographic}\uFE0F|\p{Emoji_Presentation}|[\uFE0F\u20E3]/gu, '').replace(/\s{2,}/g, ' ').trim()
+// Terminal cells of a string: Han and full-width forms take two.
+export const cells = (str: string) => [...str].reduce((n, c) => n + (/[\u2e80-\u9fff\uff00-\uffef]/.test(c) ? 2 : 1), 0)
+// Cut a string to n cells, an ellipsis marking the cut.
+export const clip = (str: string, n: number) => {
+  if (cells(str) <= n) return str
+  let out = ''
+  for (const c of str) { if (cells(out + c) > n - 1) break; out += c }
+  return n > 0 ? `${out}…` : ''
+}
 export const splitCode = (title: string) => {
   const m = clean(title).match(/^\[([^\]]+)\]\s*(.*)$/)
   return m ? { code: `[${m[1]}]`, rest: m[2] || m[1] } : { code: '', rest: clean(title) }

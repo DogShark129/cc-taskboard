@@ -70,64 +70,11 @@ export type Board = {
   createdThisWeek: number
 }
 
-// What the board's Client module draws: plain data, colors precomputed by the hooks module.
-export type CardProps = {
-  key: string; code: string; rest: string; color: string; src: 'claude' | 'me'
-  live: boolean; done: boolean; age: number | null; ageColor: string; pr: string
-  priority: string; priorityColor: string; comments: number
-  labels: string; due: string; dueColor: string; blocked: string
-  // Claude proposed to cancel it: the meta row carries 确认取消 / 保留 (WB-28).
-  propose?: boolean
-}
-// The Jira-style preview popup: everything it shows, localized and cleaned by the hooks module.
-export type PeekProps = {
-  key: string; project: string; color: string; code: string; rest: string
-  status: string; statusColor: string
-  // Details panel rows, empty ones already left out; `lozenge` draws the value as a pill.
-  rows: { label: string; value: string; color: string; lozenge?: boolean }[]
-  detailsTitle: string; descTitle: string; desc: string[]; descNone: string
-  commentsTitle: string; commentList: { head: string; text: string }[]
-  footer: string; open: string; hint: string
-  // The comment box under the comments: its placeholder and what Enter does.
-  commentPh: string; send: string
-  // Buttons after the open button on the same row (WB-28): cancel, or confirm / keep a proposal, or restore.
-  acts: { id: 'cancel' | 'confirm' | 'keep' | 'restore'; label: string }[]
-  bg: string; fg: string; border: string; mute: string
-}
-export type BoardProps = {
-  colW: number
-  // Grid mode (the narrow pane): the region width. Unset = the wide board, colW per column.
-  grid?: number
-  peek?: PeekProps
-  labels: { dropTo: string; comments: string; days: string; blocked: string; live: string; cancelOk: string; keep: string }
-  // The canceled column when the board has none: drawn as a drop bar only while a card is dragged (WB-28).
-  dropCancel?: { name: string; color: string }
-  // Surface colors for the user's theme (the Client cannot read the view).
-  surf: { tint: string; text: string; sub: string; mute: string; accent: string; live: string }
-  // count = every ticket of the column; cards = the ones drawn (none while done / canceled is folded); toggle = their expand / collapse word.
-  cols: { id: Col; name: string; color: string; count: number; toggle?: string; cards: CardProps[] }[]
-}
-// The pane header drawn by its own Client (WB-23): every string localized, every color resolved by the hooks module.
-export type HeaderProps = {
-  width: number
-  title: string; week: string; meta: string
-  nav: { id: 'prev' | 'next' | 'now'; label: string }[]
-  tabs: { id: string; label: string; decide: number; active: boolean }[]
-  filters: { id: 'me' | 'live'; label: string; on: boolean }[]
-  segs: { id: 'board' | 'feed'; label: string; active: boolean }[]
-  search: { q: string; placeholder: string }
-  live: string
-  // Right-side text actions of row 1; web is drawn as a Link to href.
-  web: { label: string; href: string }; theme: string; lang: string
-  surf: { text: string; sub: string; mute: string; accent: string; live: string; decide: string }
-}
-export type HeaderState = { editing: boolean; q: string }
-export type DragState = { drag: string | null; from: number; over: number; pd?: boolean }
-
 // auto = follow the Claude app; Resolved is what auto turns into.
 export type Resolved = 'light' | 'dark'
 export type Theme = 'auto' | Resolved
-export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; collapsed?: string[]; lang?: Lang; theme?: Theme; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
+// off: statuses the legend hid; more: sections expanded past their narrow cap; todoOpen / doneOpen / canceledOpen: the folds under the list.
+export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; lang?: Lang; theme?: Theme; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; off?: Col[]; more?: Col[]; todoOpen?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

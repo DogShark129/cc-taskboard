@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { boardForWeek, dayLabel, fold, resolveTheme, sessionTitle, weeksBack } from './register.tsx'
-import { archivedCanceled, keepTo, restoreTo, staleTitles } from './core.ts'
+import { boardForWeek, dayLabel, fold, ownerOf, resolveTheme, sessionTitle, splitCode, weeksBack } from './register.tsx'
+import { archivedCanceled, keepTo, planInit, restoreTo, scanRow, setProjects, staleTitles } from './core.ts'
 
 const NOW = new Date(2026, 9, 3, 15).getTime() // Sat 2026-10-03, week starts Mon 09-28
 const H = 3_600_000
@@ -105,7 +105,6 @@ test('past weeks show the new key and board after a later rekey', async () => {
 })
 
 test('clean() drops emoji but keeps text symbols like ↔ → ✓', async () => {
-  const { splitCode } = await import('./register.tsx') as any
   expect(splitCode('ticket↔session ✅ ⏳ 📄 ⚠️ → ok ✓').rest).toBe('ticket↔session → ok ✓')
 })
 
@@ -131,7 +130,6 @@ test('canceled archives like done; relations follow a rekey', async () => {
 })
 
 test('ownerOf: the live session working the ticket, else the latest live one that worked it', async () => {
-  const { ownerOf } = await import('./register.tsx') as any
   const tk = { key: 'WB-13', sids: ['a', 'b', 'c'] } as any
   const S = (sid: string, seenAgo: number, ticket?: string, isGone = false) => ({ sid, seen: NOW - seenAgo, ticket, isGone, state: 'idle' })
   expect(ownerOf(tk, [S('a', 1000), S('b', 2000, 'WB-13'), S('c', 500)], NOW)).toBe('b') // working it now wins
@@ -167,7 +165,6 @@ test('fold in en: bilingual title, commit line, imported move reasons', async ()
 })
 
 test('init plan: keys follow the logs, status lands as a move, linked sessions are skipped, bad plans are refused', async () => {
-  const { planInit, scanRow, setProjects } = await import('./core.ts')
   expect(setProjects([{ id: 'SVC', name: 'SVC 重写', match: 'web-app' }, { id: 'ME', name: '私人', match: 'private' }])).toEqual([])
   expect(setProjects([{ id: 'bad', name: 'x', match: '(' }]).length).toBe(1)
   const sess = (sid: string, title: string, last: number, summary?: object) =>
