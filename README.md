@@ -97,7 +97,7 @@ The automatic moves apply to the session's current ticket. Details: [docs/usage.
 ## Requirements
 
 - Claude Code with function-hook plugins (built and tested on 2.1.286).
-- macOS for the desktop-app features (theme following, session titles, the init wizard's scan of recent sessions): they read the app's files under `~/Library/Application Support/Claude/`. The board itself works elsewhere.
+- macOS (tested). On Linux and WSL the board and the web app should work, without the desktop-app features (theme following, session titles, the init wizard's scan of recent sessions), which read the app's files under `~/Library/Application Support/Claude/`. Native Windows is not supported yet.
 - Optional: [Deno](https://deno.com) 2.x for the web app; `git` and `gh` for the automatic status rules.
 - Read access to the GitHub repository.
 

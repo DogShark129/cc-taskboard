@@ -97,7 +97,7 @@ cc-taskboard 用在两个地方：一个**本地网页**，在一处看清、管
 ## 环境要求
 
 - 支持 function-hook 插件的 Claude Code（在 2.1.286 上开发和测试）。
-- 桌面 app 相关功能需要 macOS（主题跟随、会话标题、初始化向导扫描最近会话）：它们读 app 在 `~/Library/Application Support/Claude/` 下的文件。看板本身在别的系统上也能用。
+- macOS（已测试）。Linux 和 WSL 上看板和网页版应该能用，但没有桌面 app 相关功能（主题跟随、会话标题、初始化向导扫描最近会话），它们读 app 在 `~/Library/Application Support/Claude/` 下的文件。暂不支持原生 Windows。
 - 可选：网页版需要 [Deno](https://deno.com) 2.x；自动状态规则用到 `git` 和 `gh`。
 - 有这个 GitHub 仓库的读权限。
 
