@@ -183,10 +183,8 @@ dialog::backdrop{background:var(--backdrop)}
 .pk-bar b{font-weight:700}
 .pk-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;padding:18px 20px 12px}
 .pk-title{font-size:22px;font-weight:700;letter-spacing:-.01em;line-height:1.35;margin:0 0 14px;word-break:break-word}
-.pk-acts{display:flex;gap:8px;margin-bottom:18px}
-.pk-desc{max-height:12em;overflow:hidden}
-.pk-desc.fade{-webkit-mask-image:linear-gradient(#000 65%,transparent);mask-image:linear-gradient(#000 65%,transparent)}
-.pk-desc>:first-child{margin-top:0}
+.pk-acts{display:flex;gap:8px;margin-bottom:18px;align-items:center;flex-wrap:wrap}
+.pk-body .review-box{margin-bottom:18px}
 .lnk{border:none;background:none;padding:0;color:var(--accent);font-size:13px;cursor:pointer}
 .lnk:hover{text-decoration:underline}
 .pk-side{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -344,6 +342,15 @@ async function post(body) {
 }
 async function run(body, after) {
   try { const j = await post(body); await load(); after?.(j) } catch (e) { toast(t('w.err', e.message)); await load() }
+}
+// WB-36: 开新会话 / 跳到会话 as in the pane: the server builds the claude:// link (core.ts), the browser hands it to the desktop app.
+async function openApp(body) {
+  try {
+    const j = await post(body)
+    if (!j.url) return toast(t('jump.none'))
+    location.href = j.url
+    toast(body.type === 'spawnlink' ? t('toast.spawn', j.key) : t('toast.jump', j.name))
+  } catch (e) { toast(t('w.err', e.message)) }
 }
 function toast(msg) {
   const el = $('#toast'); el.textContent = msg; el.classList.add('on')
@@ -525,18 +532,56 @@ function feedHtml() {
     <span class="k" data-act="openkey" data-key="${esc(f.key)}">${esc(f.key)}</span><span>${esc(clean(f.text))} <span class="who">· ${esc(sessName(f.sid))}</span></span></div>`).join('')
 }
 
+// ---------- ticket sections: the detail page and the popup draw the same ones (WB-36) ----------
+const linkedOf = tk => tk.sids.filter(id => id !== 'web').map(id => sessions().find(x => x.sid === id) ?? { sid: id, name: id.slice(0, 6), isGone: true, state: 'idle' })
+const dotHtml = x => { const idle = x.isGone || x.state === 'idle'; return `<i class="dot ${idle ? '' : x.state === 'wait' ? 'wait' : 'pulse'}" style="${idle ? 'background:var(--line2)' : ''}"></i>` }
+// The pane's 交给 Claude row, the two that open the desktop app: a new session for the ticket, or one that worked it.
+// The rest (continue, ask, verify) are a word typed in that session once 跳到会话 is there.
+const handHtml = (tk, primary) => `${ro() ? '' : `<button class="btn ${primary ? 'primary' : ''}" data-act="spawn" data-key="${esc(tk.key)}">${esc(t('spawn'))}</button>`}${linkedOf(tk).length ? `<button class="btn" data-act="jump" data-key="${esc(tk.key)}">${esc(t('jump.go'))}</button>` : ''}`
+const reviewHtml = tk => tk.col === 'review' && !ro() ? `<div class="review-box"><b style="color:${colOf(tk.col).color}">${esc(t('review.wait'))}</b><div class="row"><button class="btn primary" data-act="accept" data-key="${esc(tk.key)}">${esc(t('accept'))}</button><button class="btn" data-act="reject" data-key="${esc(tk.key)}">${esc(t('reject'))}</button></div></div>` : ''
+const sessHtml = tk => {
+  const L = linkedOf(tk)
+  return L.length ? L.map(x => `<div class="ss">${dotHtml(x)}<span>${esc(x.label || x.name)}</span><span class="st">${esc(sessState(x))}</span><button class="btn ghost" data-act="jump" data-key="${esc(tk.key)}" data-sid="${esc(x.sid)}">${esc(t('jump'))}</button></div>`).join('')
+    : `<div class="muted">${esc(t('sessions.none'))}</div>`
+}
+// Relations both ways; the reverse sides are derived. Archived tickets are not on the board, so they show as plain keys.
+// go: what a ticket link does there (openkey on the page, peek in the popup).
+const relRows = (tk, go) => {
+  const link = k => { const x = findTicket(k); return x ? `<span class="rel" data-act="${go}" data-key="${esc(x.key)}">${esc(x.key)}</span> ${esc(colOf(x.col).name)}` : `${esc(k)} <span class="muted">${esc(t('rel.archived'))}</span>` }
+  const kids = tickets().filter(x => x.parent === tk.key)
+  return [
+    [t('rel.parent'), tk.parent ? [tk.parent] : []],
+    [t('rel.blockedBy'), tk.blockedBy || []],
+    [t('rel.blocks'), tickets().filter(x => (x.blockedBy || []).includes(tk.key)).map(x => x.key)],
+    [t('rel.children', kids.filter(x => !isOpen(x)).length, kids.length), kids.map(x => x.key)],
+  ].filter(r => r[1].length).map(([l, ks]) => [l, ks.map(link).join('，')])
+}
+// ta: the textarea's id, one per place it is drawn
+const descHtml = (tk, ta) => {
+  const editing = S.editing === tk.key && !ro()
+  return `<div class="sec"><h4>${esc(t('desc'))}${ro() || editing ? '' : `<button class="btn ghost" data-act="editdesc" data-key="${esc(tk.key)}" data-ta="${ta}">${esc(t('w.edit'))}</button>`}</h4>
+    ${editing ? `<textarea id="${ta}" placeholder="${esc(t('desc.ph'))}" rows="8">${esc(tk.desc || '')}</textarea><div class="add" style="margin-top:8px;flex-direction:row"><button class="btn primary" data-act="savedesc" data-key="${esc(tk.key)}" data-ta="${ta}">${esc(t('w.save'))}</button><button class="btn" data-act="canceldesc">${esc(t('w.cancel'))}</button></div>`
+      : tk.desc ? `<div class="md">${mdHtml(tk.desc)}</div>` : `<div class="muted">${esc(t('desc.none'))}</div>`}
+  </div>`
+}
+const commentsHtml = tk => tk.comments.slice().reverse().map(cm => `<div class="cm"><span class="by ${cm.by === 'me' ? 'me' : ''}">${esc(cm.by === 'me' ? t('you') : 'Claude')}</span><span class="tm">${md(cm.t)} ${hhmm(cm.t)}</span><div class="tx">${esc(clean(cm.text))}</div></div>`).join('')
+const notesHtml = tk => tk.notes.length ? `<div class="sec"><h4>${esc(t('notes'))}</h4><ul class="notes">${tk.notes.map(n => `<li>${esc(clean(n))}</li>`).join('')}</ul></div>` : ''
+const activityHtml = tk => `<div class="sec"><h4>${esc(t('activity'))}</h4>
+  ${tk.log.length ? tk.log.slice().reverse().map(l => `<div class="act"><span class="tm">${hhmm(l.t)}</span><span>${esc(clean(l.text))} <span class="muted">· ${esc(sessName(l.sid))}</span></span></div>`).join('') : `<div class="muted">${esc(t('w.activity.none'))}</div>`}
+</div>`
+
 function detailHtml(tk) {
   const c = colOf(tk.col), P = projOf(tk.project), { code, rest } = splitCode(tk.title)
-  const linked = tk.sids.filter(id => id !== 'web').map(id => sessions().find(x => x.sid === id) ?? { sid: id, name: id.slice(0, 6), isGone: true, state: 'idle' })
   const now = S.D.asOf
   const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><span>${v}</span></div>`
-  const editing = S.editing === tk.key && !ro()
+  const rels = relRows(tk, 'openkey')
+  const hand = handHtml(tk, true)
   const side = `<aside class="dside">
     ${ro() ? '' : `<div class="sec"><h4>${esc(t('status'))}</h4><select class="sel" data-sel="status">${S.D.cols.map(x => `<option value="${x.id}" ${x.id === tk.col ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="sec"><h4>${esc(t('priority'))}</h4><select class="sel" data-sel="priority"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option ${p.id === tk.priority ? 'selected' : ''}>${p.id}</option>`).join('')}</select></div>`}
     ${ro() ? '' : tk.proposeCancel ? `<div class="review-box"><b style="color:var(--bad)">${esc(t('cancel.ask', clean(tk.proposeCancel.reason)))}</b><div class="row">${actsHtml(tk)}</div></div>`
       : `<div class="pk-acts">${actsHtml(tk)}</div>`}
-    ${tk.col === 'review' && !ro() ? `<div class="review-box"><b style="color:${c.color}">${esc(t('review.wait'))}</b><div class="row"><button class="btn primary" data-act="accept">${esc(t('accept'))}</button><button class="btn" data-act="reject">${esc(t('reject'))}</button></div></div>` : ''}
+    ${reviewHtml(tk)}
     <div class="sec"><h4>${esc(t('details'))}</h4>
       ${kv(t('d.src'), esc(tk.src === 'me' ? t('src.me') : t('src.claude')))}
       ${kv(t('d.stay'), `${Math.floor((now - tk.since) / DAY)}${esc(t('l.days'))}`)}
@@ -547,35 +592,17 @@ function detailHtml(tk) {
       ${tk.labels?.length ? kv(t('d.labels'), esc(tagText(tk))) : ''}
       ${tk.due ? (() => { const n = dueIn(tk); return kv(t('d.due'), `${esc(tk.due)}${n === null ? '' : ` · ${esc(n < 0 ? t('due.late', -n) : n === 0 ? t('due.today') : t('due.left', n))}`}`) })() : ''}
     </div>
-    ${(() => {
-      // Relations both ways; the reverse sides are derived. Archived tickets are not on the board, so they show as plain keys.
-      const link = k => { const x = findTicket(k); return x ? `<span class="rel" data-act="openkey" data-key="${esc(x.key)}">${esc(x.key)}</span> ${esc(colOf(x.col).name)}` : `${esc(k)} <span class="muted">${esc(t('rel.archived'))}</span>` }
-      const kids = tickets().filter(x => x.parent === tk.key)
-      const rows = [
-        [t('rel.parent'), tk.parent ? [tk.parent] : []],
-        [t('rel.blockedBy'), tk.blockedBy || []],
-        [t('rel.blocks'), tickets().filter(x => (x.blockedBy || []).includes(tk.key)).map(x => x.key)],
-        [t('rel.children', kids.filter(x => !isOpen(x)).length, kids.length), kids.map(x => x.key)],
-      ].filter(r => r[1].length)
-      return rows.length ? `<div class="sec"><h4>${esc(t('relations'))}</h4>${rows.map(([l, ks]) => kv(l, ks.map(link).join('，'))).join('')}</div>` : ''
-    })()}
-    <div class="sec"><h4>${esc(t('sessions'))}</h4>
-      ${linked.length ? linked.map(x => `<div class="ss"><i class="dot ${x.isGone || x.state === 'idle' ? '' : x.state === 'wait' ? 'wait' : 'pulse'}" style="${x.isGone || x.state === 'idle' ? 'background:var(--line2)' : ''}"></i><span>${esc(x.label || x.name)}</span><span class="st">${esc(sessState(x))}</span></div>`).join('') : `<div class="muted">${esc(t('sessions.none'))}</div>`}
-      <div class="hint" style="margin-top:8px">${esc(t('w.noopen'))}</div>
-    </div></aside>`
+    ${rels.length ? `<div class="sec"><h4>${esc(t('relations'))}</h4>${rels.map(([l, h]) => kv(l, h)).join('')}</div>` : ''}
+    <div class="sec"><h4>${esc(t('sessions'))}</h4>${sessHtml(tk)}</div></aside>`
   const main = `<div>
-    <div class="sec"><h4>${esc(t('desc'))}${ro() || editing ? '' : `<button class="btn ghost" data-act="editdesc">${esc(t('w.edit'))}</button>`}</h4>
-      ${editing ? `<textarea id="descTa" placeholder="${esc(t('desc.ph'))}" rows="8">${esc(tk.desc || '')}</textarea><div class="add" style="margin-top:8px;flex-direction:row"><button class="btn primary" data-act="savedesc">${esc(t('w.save'))}</button><button class="btn" data-act="canceldesc">${esc(t('w.cancel'))}</button></div>`
-        : tk.desc ? `<div class="md">${mdHtml(tk.desc)}</div>` : `<div class="muted">${esc(t('desc.none'))}</div>`}
-    </div>
+    ${hand ? `<div class="pk-acts"><span class="muted">${esc(t('hand'))}</span>${hand}</div>` : ''}
+    ${descHtml(tk, 'descTa')}
     <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length || ''}</h4>
       ${ro() ? '' : `<div class="add"><textarea id="cmt" placeholder="${esc(t('comment.ph'))}" rows="3"></textarea><button class="btn primary" data-act="addcomment">${esc(t('w.add'))}</button></div>`}
-      ${tk.comments.slice().reverse().map(cm => `<div class="cm"><span class="by ${cm.by === 'me' ? 'me' : ''}">${esc(cm.by === 'me' ? t('you') : 'Claude')}</span><span class="tm">${md(cm.t)} ${hhmm(cm.t)}</span><div class="tx">${esc(clean(cm.text))}</div></div>`).join('')}
+      ${commentsHtml(tk)}
     </div>
-    ${tk.notes.length ? `<div class="sec"><h4>${esc(t('notes'))}</h4><ul class="notes">${tk.notes.map(n => `<li>${esc(clean(n))}</li>`).join('')}</ul></div>` : ''}
-    <div class="sec"><h4>${esc(t('activity'))}</h4>
-      ${tk.log.length ? tk.log.slice().reverse().map(l => `<div class="act"><span class="tm">${hhmm(l.t)}</span><span>${esc(clean(l.text))} <span class="muted">· ${esc(sessName(l.sid))}</span></span></div>`).join('') : `<div class="muted">${esc(t('w.activity.none'))}</div>`}
-    </div>
+    ${notesHtml(tk)}
+    ${activityHtml(tk)}
     ${ro() ? `<div class="hint">${esc(t('ro.hint'))}</div>` : ''}
   </div>`
   return `<div class="dhead"><button class="btn" data-act="back">${ic('chevron', 'sm')}${esc(t('back'))}</button><span>${esc(P?.name ?? tk.project)} /</span><span class="key" style="color:${P?.color}">${esc(tk.key)}</span>${lz(c.name, c.color)}${tk.priority ? lz(tk.priority, prioColor(tk.priority)) : ''}</div>
@@ -591,6 +618,7 @@ function renderView() {
 }
 
 let peekHtml = '', peekKey = null
+// The popup: everything the detail page has (WB-36), in the popup's own layout.
 function renderPeek() {
   const dlg = $('#peek')
   const tk = S.peek ? findTicket(S.peek) : null
@@ -598,56 +626,55 @@ function renderPeek() {
   const c = colOf(tk.col), P = projOf(tk.project), { code, rest } = splitCode(tk.title)
   const now = S.D.asOf
   const link = (k, style = '') => findTicket(k) ? `<span class="rel" ${style} data-act="peek" data-key="${esc(findTicket(k).key)}">${esc(k)}</span>` : esc(k)
-  const linked = tk.sids.filter(id => id !== 'web').map(id => sessions().find(x => x.sid === id) ?? { sid: id, name: id.slice(0, 6), isGone: true, state: 'idle' })
-  const idle = x => x.isGone || x.state === 'idle'
   const n = dueIn(tk)
   const row = (label, html) => `<div class="pk-row"><span>${esc(label)}</span><div>${html}</div></div>`
   const blockers = openBlockers(tk)
+  const rels = relRows(tk, 'peek')
   const prio = `<select class="pk-pri" data-pksel="priority" data-key="${esc(tk.key)}" ${ro() ? 'disabled' : ''} style="--c:${tk.priority ? prioColor(tk.priority) : 'var(--mute)'}"><option value="">${esc(t('none'))}</option>${S.D.priorities.map(p => `<option ${p.id === tk.priority ? 'selected' : ''}>${p.id}</option>`).join('')}</select>`
   const rows = [
     row(t('priority'), prio),
     tk.labels?.length ? row(t('d.labels'), tk.labels.map(l => `<span class="tg">${esc(l)}</span>`).join('')) : '',
     tk.due ? row(t('d.due'), `<span class="dv ${n === null ? 'calm' : n < 0 ? 'hot' : n <= 2 ? 'warn' : 'calm'}">${esc(tk.due.slice(5))}${n === null ? '' : ` · ${esc(n < 0 ? t('due.late', -n) : n === 0 ? t('due.today') : t('due.left', n))}`}</span>`) : '',
     blockers.length ? row(t('peek.blocked'), blockers.map(k => link(k, 'style="color:var(--bad)"')).join(', ')) : '',
-    tk.parent ? row(t('rel.parent'), link(tk.parent)) : '',
-    row(t('peek.sess'), linked.length
-      ? `<span class="ss"><i class="dot ${idle(linked[0]) ? '' : linked[0].state === 'wait' ? 'wait' : 'pulse'}" style="${idle(linked[0]) ? 'background:var(--line2)' : ''}"></i><span>${esc(linked[0].label || linked[0].name)}</span><span class="st">${esc(sessState(linked[0]))}${linked.length > 1 ? ` +${linked.length - 1}` : ''}</span></span>`
-      : `<span class="muted">${esc(t('none'))}</span>`),
     tk.branch ? row(t('d.branch'), `<code>${esc(tk.branch)}</code>`) : '',
+    tk.worktree ? row(t('d.worktree'), `<code>${esc(tk.worktree)}</code>`) : '',
     tk.pr ? row('PR', `<span style="color:var(--ok)">${esc(tk.pr)}</span>`) : '',
+    row(t('d.commits'), tk.commits),
     tk.proposeCancel ? row(t('d.propose'), `<span style="color:var(--bad)">${esc(clean(tk.proposeCancel.reason))}</span>`) : '',
+    row(t('d.src'), esc(tk.src === 'me' ? t('src.me') : t('src.claude'))),
     row(t('d.stay'), `${Math.max(0, Math.floor((now - tk.since) / DAY))} ${esc(t('l.days'))}`),
   ].join('')
-  const notes = (tk.notes ?? []).map(x => plainLines(x).join(' ')).filter(Boolean)
-  const desc = tk.desc ? `<div class="pk-desc md" id="pkDesc">${mdHtml(tk.desc)}</div>`
-    : notes.length ? `<div class="pk-desc" id="pkDesc"><ul class="notes">${notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`
-    : `<div class="muted">${esc(t('desc.none'))}</div>`
-  const cms = tk.comments.slice(-2).reverse().map(cm => `<div class="cm"><span class="by ${cm.by === 'me' ? 'me' : ''}">${esc(cm.by === 'me' ? t('you') : 'Claude')}</span><span class="tm">${esc(ago(cm.t, now))}</span><div class="tx">${esc(clean(cm.text))}</div></div>`).join('')
   const html = `<div class="pk-bar"><span><span>${esc(P?.name ?? tk.project)} / </span><b style="color:${P?.color ?? 'var(--mute)'}">${esc(tk.key)}</b></span><button class="btn ghost" data-act="closepeek" title="${esc(t('peek.close'))}" aria-label="${esc(t('peek.close'))}">${ic('x')}</button></div>
     <div class="pk-body">
       <div>
         <h2 class="pk-title">${code ? `<b style="color:${P?.color ?? 'var(--mute)'}">${esc(code)}</b> ` : ''}${esc(rest)}</h2>
-        <div class="pk-acts"><button class="btn primary" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.open'))}</button>${ro() ? '' : actsHtml(tk)}</div>
-        <div class="sec"><h4>${esc(t('desc'))}</h4>${desc}</div>
-        <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length}</h4>${cms}${tk.comments.length ? `<button class="lnk" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.all'))}</button>` : ''}
-        ${ro() ? '' : `<div class="pk-cmt"><textarea id="pkCmt" rows="1" placeholder="${esc(t('peek.cmt.ph'))}"></textarea><button class="btn" data-act="peekcomment">${esc(t('peek.send'))}</button></div>`}</div>
+        <div class="pk-acts"><button class="btn primary" data-act="open" data-key="${esc(tk.key)}">${esc(t('peek.open'))}</button>${handHtml(tk, false)}${ro() ? '' : actsHtml(tk)}</div>
+        ${reviewHtml(tk)}
+        ${descHtml(tk, 'pkDescTa')}
+        <div class="sec"><h4>${esc(t('comments'))} ${tk.comments.length}</h4>
+        ${ro() ? '' : `<div class="pk-cmt"><textarea id="pkCmt" rows="1" placeholder="${esc(t('peek.cmt.ph'))}"></textarea><button class="btn" data-act="peekcomment">${esc(t('peek.send'))}</button></div>`}${commentsHtml(tk)}</div>
+        ${notesHtml(tk)}
+        ${activityHtml(tk)}
       </div>
       <aside class="pk-side">
         <label class="pk-status" style="--c:${c.color}"><select data-pksel="status" data-key="${esc(tk.key)}" aria-label="${esc(t('status'))}" ${ro() ? 'disabled' : ''}>${S.D.cols.map(x => `<option value="${x.id}" ${x.id === tk.col ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>${ic('chevron-d')}</label>
         <div class="pk-panel"><h4>${esc(t('details'))}</h4>${rows}</div>
+        ${rels.length ? `<div class="pk-panel"><h4>${esc(t('relations'))}</h4>${rels.map(([l, h]) => row(l, h)).join('')}</div>` : ''}
+        <div class="pk-panel"><h4>${esc(t('sessions'))}</h4>${sessHtml(tk)}</div>
       </aside>
     </div>
     <div class="pk-foot">${esc(t('peek.created', md(tk.created)))} · ${esc(t('peek.updated', ago(tk.log.at(-1)?.t ?? tk.created, now)))}</div>`
   // Same markup: leave the DOM alone so an open dropdown or scroll position survives the 30 s / SSE reloads.
   if (html !== peekHtml) {
-    // a refetch that changes the markup (a new comment) must not eat what is being typed
-    const old = $('#pkCmt'), draft = old && peekKey === tk.key ? [old.value, document.activeElement === old, old.selectionStart, old.selectionEnd] : null
+    // a refetch that changes the markup (a new comment) must not eat what is being typed (a comment, a description)
+    const a = document.activeElement
+    const drafts = peekKey === tk.key ? [...dlg.querySelectorAll('textarea[id]')].map(x => [x.id, x.value, a === x, x.selectionStart, x.selectionEnd]) : []
     dlg.innerHTML = html; peekHtml = html
-    const box = $('#pkCmt')
-    if (draft && box) { box.value = draft[0]; if (draft[1]) { box.focus(); box.setSelectionRange(draft[2], draft[3]) } }
-    const d = $('#pkDesc')
+    for (const [id, v, focused, s0, s1] of drafts) {
+      const box = dlg.querySelector(`#${id}`)
+      if (box) { box.value = v; if (focused) { box.focus(); box.setSelectionRange(s0, s1) } }
+    }
     if (!dlg.open) dlg.showModal()
-    if (d) d.classList.toggle('fade', d.scrollHeight > d.clientHeight + 1)
     if (peekKey !== tk.key) dlg.scrollTop = 0
     peekKey = tk.key
   } else if (!dlg.open) dlg.showModal()
@@ -711,15 +738,16 @@ document.addEventListener('click', e => {
     case 'closenew': $('#newDlg').close(); break
     case 'boards': openBoards(); break
     case 'closecfg': $('#cfgDlg').close(); break
-    case 'accept': run({ type: 'accept', key: S.sel }); break
-    case 'reject': run({ type: 'reject', key: S.sel }); break
+    case 'accept': case 'reject': run({ type: d.act, key: d.key }); break
+    case 'spawn': openApp({ type: 'spawnlink', key: d.key }); break
+    case 'jump': openApp({ type: 'jumplink', key: d.key, ...(d.sid ? { sid: d.sid } : {}) }); break
     // WB-28: the reason is optional; the browser's own prompt asks for it, Cancel there keeps the ticket
     case 'cancel': { const why = prompt(t('cancel.ph'), ''); if (why !== null) run({ type: 'cancel', key: d.key, text: why }); break }
     case 'confirm': case 'keep': case 'restore': run({ type: d.act, key: d.key }); break
     case 'foldcanceled': S.canceledOpen = !S.canceledOpen; render(); break
-    case 'editdesc': S.editing = S.sel; render(true); $('#descTa')?.focus(); break
+    case 'editdesc': S.editing = d.key; render(true); document.getElementById(d.ta)?.focus(); break
     case 'canceldesc': S.editing = null; render(true); break
-    case 'savedesc': { const v = $('#descTa').value; S.editing = null; run({ type: 'meta', key: S.sel, desc: v }); break }
+    case 'savedesc': { const v = document.getElementById(d.ta).value; S.editing = null; run({ type: 'meta', key: d.key, desc: v }); break }
     case 'addcomment': addComment(); break
     case 'peekcomment': addPeekComment(); break
   }
@@ -766,7 +794,7 @@ document.addEventListener('input', e => {
 document.addEventListener('compositionstart', () => { composing = true })
 document.addEventListener('compositionend', () => { composing = false; if (pending) { pending = false; render() } })
 // the peek dialog closes itself on Esc; keep the state in step
-$('#peek').addEventListener('cancel', e => { if ($('#pkCmt')?.value.trim() && document.activeElement === $('#pkCmt')) e.preventDefault() })
+$('#peek').addEventListener('cancel', e => { const a = document.activeElement; if (a?.tagName === 'TEXTAREA' && $('#peek').contains(a) && a.value.trim()) e.preventDefault() })
 $('#peek').addEventListener('close', () => { if (S.peek) { S.peek = null; render() } })
 document.addEventListener('submit', e => {
   if (e.target.id === 'cfgForm') {

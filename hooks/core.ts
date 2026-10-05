@@ -73,7 +73,7 @@ export const ZH = {
   'rel.blockedBy': '被卡于', 'rel.blocks': '卡着', 'rel.parent': '父任务', 'rel.children': '子任务 {0}/{1}', 'rel.archived': '已归档', 'relations': '关系',
   'pane.title': '任务看板', 'cmd.opened': '已打开任务看板。',
   'lang.btn': 'EN', 'theme.auto': '跟随 Claude', 'theme.light': '浅色', 'theme.dark': '深色',
-  'peek.open': '打开详情', 'peek.close': '关闭', 'peek.all': '查看全部评论', 'peek.hint': '点空白处关闭', 'peek.latest': '最近：', 'peek.cmt.ph': '写评论，回车发送；在做这张票的会话会自动收到', 'peek.cmt.label': '评论 {0}：', 'peek.send': '发送',
+  'peek.open': '打开详情', 'peek.close': '关闭', 'peek.hint': '点空白处关闭', 'peek.latest': '最近：', 'peek.cmt.ph': '写评论，回车发送；在做这张票的会话会自动收到', 'peek.cmt.label': '评论 {0}：', 'peek.send': '发送',
   'peek.sess': '关联会话', 'peek.blocked': '阻塞于', 'peek.created': '创建 {0}', 'peek.updated': '更新 {0}',
   'ago.now': '刚刚', 'ago.min': '{0} 分钟前', 'ago.hour': '{0} 小时前', 'ago.day': '{0} 天前',
   'all.projects': '全部项目', 'all': '全部', 'week.ro': '历史周只读', 'wk.prev': '上一周 W{0}', 'wk.next': '下一周 W{0}', 'wk.now': '回到本周',
@@ -101,7 +101,7 @@ export const ZH = {
   'w.new': '新建工单', 'w.title': '标题', 'w.project': '项目', 'w.create': '创建', 'w.cancel': '取消', 'w.desc.opt': '描述（可选）', 'w.title.ph': '一句话说清要做什么',
   'b.title': '看板设置', 'b.prefix': '编号前缀', 'b.name': '名称', 'b.name_en': '英文名', 'b.saved': '已保存，{0} 张票改了编号',
   'b.hint': '改了前缀，这个看板的票会一起改编号，数字不变（WB-12 → KB-12），旧编号仍然搜得到、认得出；也可以改回以前的前缀。',
-  'w.save': '保存', 'w.edit': '编辑', 'w.add': '发表评论', 'w.noopen': '在 Claude Code 的看板面板里点「开新会话做」', 'w.offline': '连接断开，正在重连…',
+  'w.save': '保存', 'w.edit': '编辑', 'w.add': '发表评论', 'w.offline': '连接断开，正在重连…',
   'w.link': '网页版', 'cmd.web': '网页版看板：{0}',
   'hdr.search': '搜索…', 'hdr.feed': '动态',
   'l.live': '在做', 'live.on': '在做：', 'd.worktree': '工作树', 'toast.woke': '{0}：收到评论，开始处理', 'fold.commit': '提交 {0}',
@@ -121,7 +121,7 @@ export const I18N: Record<Lang, typeof ZH> = {
     'rel.blockedBy': 'Blocked by', 'rel.blocks': 'Blocks', 'rel.parent': 'Parent', 'rel.children': 'Subtasks {0}/{1}', 'rel.archived': 'archived', 'relations': 'Relations',
     'pane.title': 'Task board', 'cmd.opened': 'Task board opened.',
     'lang.btn': '中文', 'theme.auto': 'Follow Claude', 'theme.light': 'Light', 'theme.dark': 'Dark',
-    'peek.open': 'Open details', 'peek.close': 'Close', 'peek.all': 'View all comments', 'peek.hint': 'Click outside to close', 'peek.latest': 'Latest: ', 'peek.cmt.ph': 'Add a comment — Enter to send; the session working this ticket picks it up', 'peek.cmt.label': 'Comment {0}: ', 'peek.send': 'Send',
+    'peek.open': 'Open details', 'peek.close': 'Close', 'peek.hint': 'Click outside to close', 'peek.latest': 'Latest: ', 'peek.cmt.ph': 'Add a comment — Enter to send; the session working this ticket picks it up', 'peek.cmt.label': 'Comment {0}: ', 'peek.send': 'Send',
     'peek.sess': 'Session', 'peek.blocked': 'Blocked by', 'peek.created': 'Created {0}', 'peek.updated': 'Updated {0}',
     'ago.now': 'just now', 'ago.min': '{0} min ago', 'ago.hour': '{0} h ago', 'ago.day': '{0} d ago',
     'all.projects': 'All projects', 'all': 'All', 'week.ro': 'Past week, read-only', 'wk.prev': 'Previous week W{0}', 'wk.next': 'Next week W{0}', 'wk.now': 'This week',
@@ -149,7 +149,7 @@ export const I18N: Record<Lang, typeof ZH> = {
     'w.new': 'New ticket', 'w.title': 'Title', 'w.project': 'Project', 'w.create': 'Create', 'w.cancel': 'Cancel', 'w.desc.opt': 'Description (optional)', 'w.title.ph': 'What needs doing, in one line',
     'b.title': 'Board settings', 'b.prefix': 'Key prefix', 'b.name': 'Name', 'b.name_en': 'English name', 'b.saved': 'Saved; {0} tickets got new keys',
     'b.hint': 'A new prefix rekeys that board\'s tickets, numbers kept (WB-12 → KB-12); the old keys still find them; an earlier prefix can be used again.',
-    'w.save': 'Save', 'w.edit': 'Edit', 'w.add': 'Comment', 'w.noopen': "Use 'Do in a new session' in the Claude Code board pane", 'w.offline': 'Disconnected, reconnecting...',
+    'w.save': 'Save', 'w.edit': 'Edit', 'w.add': 'Comment', 'w.offline': 'Disconnected, reconnecting...',
     'w.link': 'Web', 'cmd.web': 'Web board: {0}',
     'hdr.search': 'Search…', 'hdr.feed': 'Feed',
     'l.live': 'live', 'live.on': 'Working: ', 'd.worktree': 'Worktree', 'toast.woke': '{0}: got a comment, working on it', 'fold.commit': 'Commit {0}',
@@ -425,6 +425,44 @@ export function staleTitles(b: Board, spawned: string[], titles: Record<string, 
     const title = sessionTitle(tk.key, titleOf(tk, 'zh'), tk.col, s.days ?? [])
     return titles[s.sid] === title ? [] : [{ sid: s.sid, app: s.app!, key: tk.key, title }]
   })
+}
+
+// The desktop app's own links, one copy for the pane (open …) and the web app (the browser opens them). WB-36.
+// WB-21: a new session in the ticket's project root with the claim line typed in; that first prompt marks it spawned.
+export function newSessionUrl(key: string, folder?: string) {
+  const q = `认领 ${key}：先调用 mcp__cc-taskboard__ticket action:update key:${key} work:true，再看 ticket 描述和评论开工。`
+  return `claude://code/new?q=${encodeURIComponent(q)}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`
+}
+// WB-30: an existing session, by its desktop id (list_sessions' `link`).
+export const sessionUrl = (app: string) => `claude://claude.ai/epitaxy/${app}`
+export const APP_ID = /^local_[A-Za-z0-9-]{1,64}$/
+// The desktop app's session files, <dir>/<org>/<user>/local_*.json (macOS layout); io is the caller's fs.
+export const appSessionsDir = (home: string) => `${home}/Library/Application Support/Claude/claude-code-sessions`
+export type AppIo = { ls: (dir: string) => Promise<string[]>; read: (path: string) => Promise<string> }
+async function appUserDirs(io: AppIo, dir: string) {
+  const ls = (p: string) => io.ls(p).catch(() => [] as string[])
+  const out: string[] = []
+  for (const org of await ls(dir)) for (const user of await ls(`${dir}/${org}`)) out.push(`${dir}/${org}/${user}`)
+  return out
+}
+// A session's title as the desktop app holds it (undefined: not found, or archived).
+export async function appTitle(io: AppIo, dir: string, app: string) {
+  for (const d of await appUserDirs(io, dir)) {
+    const j = await io.read(`${d}/${app}.json`).then(JSON.parse).catch(() => null)
+    if (j) return !j.isArchived && typeof j.title === 'string' ? j.title as string : undefined
+  }
+}
+// The desktop id of a CLI session, not archived: `known` (Sess.app) when it still exists, else the file whose cliSessionId it is.
+export async function appIdOf(io: AppIo, dir: string, cli: string, known?: string) {
+  if (known && APP_ID.test(known)) return (await appTitle(io, dir, known)) === undefined ? undefined : known
+  for (const d of await appUserDirs(io, dir)) {
+    for (const f of await io.ls(d).catch(() => [] as string[])) {
+      const id = f.replace(/\.json$/, '')
+      if (!APP_ID.test(id)) continue
+      const j = await io.read(`${d}/${f}`).then(JSON.parse).catch(() => null)
+      if (j?.cliSessionId === cli) return j.isArchived ? undefined : id
+    }
+  }
 }
 
 export const md = (t: number) => {

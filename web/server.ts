@@ -1,7 +1,7 @@
 /// <reference lib="deno.ns" />
 // Local web app for cc-taskboard: same event logs as the mod, same fold (hooks/core.ts).
 // Run: deno run --allow-read --allow-write --allow-env --allow-net=127.0.0.1 --allow-run=claude,defaults web/server.ts
-import { COL_IDS, COLS, DATA_DIR, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, aliasResolver, archivedCanceled, prefixRekeys, projectsJson, boardForWeek, cancelEv, descOf, fold, keepTo, parseLines, projName, restoreTo, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
+import { COL_IDS, COLS, DATA_DIR, appIdOf, appSessionsDir, newSessionUrl, projOf, sessionUrl, I18N, LEGACY_DATA_DIR, PRIORITIES, PRIORITY_COLOR, PROJECTS, aliasResolver, archivedCanceled, prefixRekeys, projectsJson, boardForWeek, cancelEv, descOf, fold, keepTo, parseLines, projName, restoreTo, setProjects, resolveTheme, titleOf, tl, weeksBack } from '../hooks/core.ts'
 import type { Ev, K } from '../hooks/core.ts'
 import type { Sess, Ticket } from '../types/index.d.ts'
 
@@ -152,7 +152,7 @@ export function startServer(opts: Opts = {}) {
     const priority = body.priority === undefined ? undefined : String(body.priority)
     if (priority !== undefined && priority !== '' && !PRIORITIES.includes(priority as never)) throw new HttpError(400, `unknown priority ${priority}`)
     return await serial(async () => {
-      const { evs } = await loadAll()
+      const { evs, sessions } = await loadAll()
       const { resolve } = aliasResolver(evs)
       const append = async (...lines: Omit<Ev, 't' | 'sid'>[]) => {
         const t = Date.now()
@@ -203,6 +203,21 @@ export function startServer(opts: Opts = {}) {
       const key = resolve(str(body.key, 'key'))
       if (!evs.some(e => e.k === 'create' && resolve(e.key) === key)) throw new HttpError(404, `no ticket ${body.key}`)
       const tk = fold(evs, [], 0).tickets.find(x => x.key === key)
+      // WB-36: the pane's 开新会话 / 跳到会话 links, built by the same core code; the page opens them (no `open` here).
+      if (type === 'spawnlink') return { ok: true, key, url: newSessionUrl(key, projOf(tk?.project ?? null)?.root) }
+      if (type === 'jumplink') {
+        const want = body.sid === undefined ? undefined : str(body.sid, 'sid')
+        const known = await enrich(sessions) // the names the page shows
+        const io = { ls: async (d: string) => { const out: string[] = []; for await (const f of Deno.readDir(d)) out.push(f.name); return out }, read: (f: string) => Deno.readTextFile(f) }
+        // the most recently active first, as the pane's linkedOf
+        const linked = (tk?.sids ?? []).filter(x => x !== 'web' && (!want || x === want))
+          .map(x => known.find(y => y.sid === x) ?? { sid: x, name: x.slice(0, 6), seen: 0 } as Sess).sort((x, y) => y.seen - x.seen)
+        for (const x of linked) {
+          const app = await appIdOf(io, appSessionsDir(home), x.sid, x.app)
+          if (app) return { ok: true, key, url: sessionUrl(app), name: x.label || x.name }
+        }
+        return { ok: true, key, url: null }
+      }
       if (type === 'cancel' || type === 'confirm' || (type === 'move' && col === 'canceled')) {
         // WB-28: the person's cancel is a move by 'me' whose text is the reason; confirm takes the one Claude proposed
         await append(cancelEv(key, type === 'confirm' ? tk?.proposeCancel?.reason : body.text === undefined ? '' : str(body.text, 'text')))

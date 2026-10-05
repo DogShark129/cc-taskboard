@@ -4,9 +4,9 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, Col, Lang, Priority, Resolved, Sess, Ticket, View } from '../types'
 import {
   BAD, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
-  LIVE_MS, ago, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, missingIds, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
+  LIVE_MS, ago, appIdOf, appSessionsDir, appTitle as coreAppTitle, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, missingIds, newSessionUrl, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, sessionUrl, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
-import type { Ev, InitPlan, K, ScanRow } from './core.ts'
+import type { AppIo, Ev, InitPlan, K, ScanRow } from './core.ts'
 
 // The tests import these from here.
 export { boardForWeek, dayLabel, fold, ownerOf, resolveTheme, sessionTitle, splitCode, weeksBack } from './core.ts'
@@ -22,7 +22,7 @@ async function resolvePaths($: $) {
   const legacy = `${home}/${LEGACY_DATA_DIR}`
   DATA = (await $.env.get('CC_TASKBOARD_DATA')) || (!(await $.fs.exists(own)) && (await $.fs.exists(legacy)) ? legacy : own)
   APP_CONFIG = `${home}/Library/Application Support/Claude/config.json`
-  APP_SESSIONS = `${home}/Library/Application Support/Claude/claude-code-sessions`
+  APP_SESSIONS = appSessionsDir(home)
 }
 const PANE = 'cc-taskboard'
 const TOOL = 'mcp__cc-taskboard__ticket'
@@ -322,48 +322,25 @@ async function personMove($: $, key: string, col: Col, why: string) {
 // ticket's owner or the newest live session. Each title is asked for once per session that asks (asked).
 // ponytail: asked is per process; a reload may ask once more for a rename that failed
 const asked = new Map<string, string>()
-// A session's title as the desktop app holds it (undefined: not found, or archived).
-async function appTitle($: $, app: string) {
-  const ls = (p: string) => $.fs.list(p).catch(() => [] as { name: string }[])
-  for (const org of await ls(APP_SESSIONS)) for (const user of await ls(`${APP_SESSIONS}/${org.name}`)) {
-    const d = await $.fs.read(`${APP_SESSIONS}/${org.name}/${user.name}/${app}.json`).then(JSON.parse).catch(() => null)
-    if (d) return !d.isArchived && typeof d.title === 'string' ? d.title as string : undefined
-  }
-}
-// WB-30: the desktop app opens a session from its own link, claude://claude.ai/epitaxy/<local id> (list_sessions' `link`).
-const APP_ID = /^local_[A-Za-z0-9-]{1,64}$/
-// The desktop id of a CLI session, not archived: Sess.app when this plugin saw it start, else the app's local_<id>.json whose cliSessionId it is.
-async function appIdOf($: $, cli: string, known?: string) {
-  if (known && APP_ID.test(known)) return (await appTitle($, known)) === undefined ? undefined : known
-  const ls = (p: string) => $.fs.list(p).catch(() => [] as { name: string }[])
-  for (const org of await ls(APP_SESSIONS)) for (const user of await ls(`${APP_SESSIONS}/${org.name}`)) {
-    const dir = `${APP_SESSIONS}/${org.name}/${user.name}`
-    for (const f of await ls(dir)) {
-      const id = f.name.replace(/\.json$/, '')
-      if (!APP_ID.test(id)) continue
-      const d = await $.fs.read(`${dir}/${f.name}`).then(JSON.parse).catch(() => null)
-      if (d?.cliSessionId === cli) return d.isArchived ? undefined : id
-    }
-  }
-}
+// The desktop app's session files through this plugin's fs (core.ts reads them the same way for the web app).
+const appIo = ($: $): AppIo => ({ ls: p => $.fs.list(p).then(xs => xs.map(x => x.name)), read: p => $.fs.read(p) })
+const appTitle = ($: $, app: string) => coreAppTitle(appIo($), APP_SESSIONS, app)
 // Switch the desktop app to the first of these CLI sessions it still has; a toast says which, or that none could open.
 async function jumpTo($: $, sessions: Sess[]) {
   for (const s of sessions) {
-    const app = await appIdOf($, s.sid, s.app)
+    const app = await appIdOf(appIo($), APP_SESSIONS, s.sid, s.app)
     if (!app) continue
-    const r = await $.process.run(['open', `claude://claude.ai/epitaxy/${app}`], { timeoutMs: 5000 }).catch(() => null)
+    const r = await $.process.run(['open', sessionUrl(app)], { timeoutMs: 5000 }).catch(() => null)
     $.ui.toast(r?.exitCode === 0 ? t('toast.jump', s.label || s.name) : t('jump.fail'))
     return
   }
   $.ui.toast(t('jump.none'))
 }
-// WB-21: a new session for a ticket through the app's own link, claude://code/new?q=&folder=: the app switches to a new-session
+// WB-21: a new session for a ticket through the app's own link (newSessionUrl): the app switches to a new-session
 // screen in the ticket's project root (projects.json `root`, Fan's call: not a session's old worktree) with the claim line typed in, and the person presses send. That first prompt, 「认领 <KEY>」,
 // marks it spawned (markSpawned), so its title follows the ticket. The pane's own 进行中 moves still only leave a chip.
 async function newSessionFor($: $, tk: Ticket) {
-  const folder = projOf(tk.project)?.root || me.cwd
-  const q = `认领 ${tk.key}：先调用 mcp__cc-taskboard__ticket action:update key:${tk.key} work:true，再看 ticket 描述和评论开工。`
-  const r = await $.process.run(['open', `claude://code/new?q=${encodeURIComponent(q)}&folder=${encodeURIComponent(folder)}`], { timeoutMs: 5000 }).catch(() => null)
+  const r = await $.process.run(['open', newSessionUrl(tk.key, projOf(tk.project)?.root || me.cwd)], { timeoutMs: 5000 }).catch(() => null)
   $.ui.toast(r?.exitCode === 0 ? t('toast.spawn', tk.key) : t('spawn.fail'))
 }
 async function staleNow($: $, b: Board) {
@@ -718,6 +695,14 @@ export const register: Register = on => {
   })
 
   // ---------- 面板 ----------
+  // WB-36: a pane row (row.tsx) was clicked: open its preview, or fold it if it was open.
+  on('ui.message', async ($, e, next) => {
+    const key = (e.data as { toggle?: unknown } | null)?.toggle
+    if (typeof key !== 'string' || !/^[A-Z][A-Z0-9]*-\d+$/.test(key)) return next(e)
+    await update($, view, cur => ({ ...cur, peek: cur.peek === key ? null : key }))
+    return {}
+  })
+
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE && e.origin.kind === 'person') paneWanted = false
     return next(e)
@@ -741,6 +726,7 @@ export const register: Register = on => {
     // resolve may hand out elements a surface's table lacks, drawn as empty Boxes: terminal has no Svg, mobile no Input or Select.
     if (e.surface === 'terminal') delete els.Svg
     if (e.surface === 'mobile') { delete els.Input; delete els.Select }
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') delete els.Client // mobile and vscode draw none
     // Font size is not a prop; a Markdown heading is the one thing the desktop draws larger (as in a reply). Elsewhere a bold Text title.
     const bigTitle = e.surface === 'desktop' && Boolean(els.Markdown)
     const { Box, Text, Button } = els
@@ -1136,7 +1122,8 @@ export const register: Register = on => {
       ]
     }
 
-    // One ticket, one line: the title is a plain Button, clipped to what the right-side items leave.
+    // One ticket, one line, the title clipped to what the right-side items leave. Where the surface draws a Client
+    // (terminal, desktop) the whole row is one (row.tsx), so a click anywhere opens it (WB-36); elsewhere the title is a plain Button.
     const row = (tk: Ticket) => {
       const closed = tk.col === 'done' || tk.col === 'canceled'
       const pc = projOf(tk.project)?.color ?? MUTE
@@ -1154,11 +1141,15 @@ export const register: Register = on => {
       // ponytail: cells are terminal cells; the desktop font runs narrower, so 4 spare cells keep the row on one line there too
       const room = width - 2 - (cells(tk.key) + 1) - right.reduce((n, r) => n + cells(r.text) + 1, 0) - 4
       const open = v.peek === tk.key
-      const line = (
+      const title = clip(code ? `${code} ${rest}` : rest, Math.max(6, room))
+      const line = els.Client ? (
+        <els.Client key={`open-${tk.key}`} module="./row.tsx" width="100%"
+          props={{ id: tk.key, keyColor: pc, title, dim: closed, bg: open ? surf.tint : null, hoverBg: surf.tint, right }} />
+      ) : (
         <Box key={`row-${tk.key}`} gap={1} backgroundColor={open ? surf.tint : undefined} hover={{ backgroundColor: surf.tint }}>
           <Box flexShrink={0}><Text bold color={pc}>{tk.key}</Text></Box>{/* the key leads the row in the project color (WB-33); it names the project too */}
           <Box flexGrow={1} flexShrink={1}>
-            <Button key={`open-${tk.key}`} plain dimColor={closed} label={clip(code ? `${code} ${rest}` : rest, Math.max(6, room))}
+            <Button key={`open-${tk.key}`} plain dimColor={closed} label={title}
               onPress={() => setView({ peek: open ? null : tk.key })} />
           </Box>
           {right.map((r, i) => <Text key={`r${i}`} color={r.color} inverse={r.pill} bold={r.pill}>{r.text}</Text>)}

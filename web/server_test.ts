@@ -6,7 +6,7 @@ const assertEquals = (a: unknown, b: unknown, msg?: string) => assert.deepEqual(
 const assertStringIncludes = (a: string, b: string) => assert.ok(a.includes(b), `${JSON.stringify(a)} does not include ${b}`)
 
 import { defaultData, startServer } from './server.ts'
-import { DATA_DIR, LEGACY_DATA_DIR } from '../hooks/core.ts'
+import { DATA_DIR, LEGACY_DATA_DIR, newSessionUrl } from '../hooks/core.ts'
 
 const H = { 'content-type': 'application/json', 'x-cc-taskboard': '1' }
 
@@ -306,3 +306,32 @@ Deno.test('index.html: the board settings form posts type boards', async () => {
   const form = html.slice(html.indexOf('id="cfgForm"'), html.indexOf('</form>', html.indexOf('id="cfgForm"')))
   assert.ok(!/name="(id|name)"/.test(form), 'cfgForm has a field named id or name')
 })
+
+Deno.test('WB-36: spawnlink / jumplink hand the page the pane\'s claude:// links', async () => {
+  const home = await Deno.makeTempDir({ prefix: 'wb-home-' })
+  const dir = `${home}/Library/Application Support/Claude/claude-code-sessions/org/user`
+  await Deno.mkdir(dir, { recursive: true })
+  try {
+    await withServer({ home }, async ({ post }) => {
+      const send = async (b: unknown) => { const r = await post(b); const j = await r.json(); assertEquals(r.status, 200, JSON.stringify(j)); return j }
+      const spawn = await send({ type: 'spawnlink', key: 'SVC-1' })
+      assertEquals(spawn.url, newSessionUrl('SVC-1', '/home/test/web-app'))
+      assertEquals((await send({ type: 'spawnlink', key: 'WB-3' })).url, newSessionUrl('WB-3')) // no root: the app asks for the folder
+      assertEquals((await send({ type: 'jumplink', key: 'SVC-1' })).url, null) // s1 has no desktop session yet
+      await Deno.writeTextFile(`${dir}/local_abc.json`, JSON.stringify({ cliSessionId: 's1', title: 'x', isArchived: true }))
+      assertEquals((await send({ type: 'jumplink', key: 'SVC-1' })).url, null) // archived ones are skipped
+      await Deno.writeTextFile(`${dir}/local_abc.json`, JSON.stringify({ cliSessionId: 's1', title: 'x' }))
+      const jump = await send({ type: 'jumplink', key: 'SVC-1', sid: 's1' })
+      assertEquals([jump.url, jump.name], ['claude://claude.ai/epitaxy/local_abc', 'x'])
+      assertEquals((await send({ type: 'jumplink', key: 'SVC-1', sid: 'other' })).url, null)
+    })
+  } finally {
+    await Deno.remove(home, { recursive: true })
+  }
+})
+
+Deno.test('index.html: new session / go to session buttons ask for those links', async () => {
+  const html = await Deno.readTextFile(new URL('./index.html', import.meta.url))
+  for (const s of ['data-act="spawn"', 'data-act="jump"', "type: 'spawnlink'", "type: 'jumplink'"]) assertStringIncludes(html, s)
+})
+
