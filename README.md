@@ -4,6 +4,11 @@ English | [简体中文](README.zh-CN.md)
 
 cc-taskboard is a Claude Code plugin that keeps one Jira-style task board across all of your Claude Code sessions. Every session writes what it works on to a shared, local event log; every session (and a small local web app) folds those logs into the same board. Claude gets a `ticket` tool to create and update tickets, and the plugin moves tickets on its own when Claude commits, opens or merges a PR, or asks you a question. You review, comment, drag and accept; your comments wake the session that owns the ticket.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark-en.png">
+  <img src="docs/images/board-en.png" alt="cc-taskboard web board, all projects (demo data)">
+</picture>
+
 ## Quick start
 
 **1. Turn on function-hook plugins** (once). Add this to `~/.claude/settings.json`, merged with what is already there:
@@ -97,6 +102,8 @@ In the pane, To do, Done and Canceled sit folded below the list; on the web boar
 
 The pane is a focus list: Decision, In progress, In review and Waiting as sections of one-line rows, a status ribbon whose legend hides or shows a status, and To do, Done and Canceled folded below. Click anywhere on a row for a preview under it (the row again closes it; on mobile, the title): status and priority pickers, "Open details", "New session", "Go to session", cancel or restore, the description, the latest comments and a comment box. On the web board, drag a card to another column to move it; clicking a card opens a popup with everything the detail view has. The detail view has status and priority pickers, labels and due date fields (pane only), relations (parent, subtasks, blocked by, blocks), linked sessions (each with "Switch to it"), "New session", the description editor, comments, key points and the activity log. On the web, "New session" and "Switch to it" open the desktop app through its `claude://` links, the same ones the pane opens.
 
+![Ticket detail: description, comments, key points, relations, PR and activity (demo data)](docs/images/detail-en.png)
+
 ### Comments wake the owning session
 
 A comment you write on the board (pane, preview or web app) goes to the session that owns the ticket: the live session working on it, else the most recently seen live session that worked on it. That session gets the comment as a prompt as soon as it is idle, handles it, replies with a comment and moves the ticket to In review. Each comment is delivered once, by one session.
@@ -130,6 +137,8 @@ deno run --allow-read --allow-write --allow-env --allow-net=127.0.0.1 --allow-ru
 ```
 
 Stop it with `pkill -f cc-taskboard/web/server.ts`. Restart it after changing `hooks/core.ts`. `WB_PORT` sets another port for a manual run; the plugin always uses 4790.
+
+![Live feed: every session's status changes, commits, PRs and comments as they happen (demo data)](docs/images/feed-en.png)
 
 ## Data
 
