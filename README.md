@@ -8,11 +8,7 @@
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-cc-taskboard lives in two places: a **board pane in the Claude Code sidebar**, next to every session, and a **local web page** where you manage all your sessions and tickets at once.
-
-**In the Claude Code sidebar**: the board of the project you are in, one click from the chat.
-
-![The cc-taskboard pane in the Claude Code sidebar (demo data)](docs/images/pane-en.png)
+cc-taskboard lives in two places: a **local web page** where you see and manage every session and ticket at once, and a **board pane in the Claude Code sidebar**, so you can manage them any time without leaving the chat.
 
 **On the web page** (`http://localhost:4790`): every project and session on one board; open a ticket, comment, accept, or start a new session for it.
 
@@ -20,6 +16,10 @@ cc-taskboard lives in two places: a **board pane in the Claude Code sidebar**, n
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark-en.png">
   <img src="docs/images/board-en.png" alt="cc-taskboard web page: all projects (demo data)">
 </picture>
+
+**In the Claude Code sidebar**: the same board next to every session; check, move and comment on tickets any time while you work.
+
+![The cc-taskboard pane in the Claude Code sidebar (demo data)](docs/images/pane-en.png)
 
 ## Install
 

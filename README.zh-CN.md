@@ -8,11 +8,7 @@
   <a href="README.md">English</a> · <strong>简体中文</strong>
 </p>
 
-cc-taskboard 用在两个地方：**Claude Code 侧边栏里的看板面板**，跟着每个会话；以及一个**本地网页**，在一处管理你所有的会话和工单。
-
-**Claude Code 侧边栏**：当前项目的看板，就在对话旁边。
-
-![Claude Code 侧边栏里的 cc-taskboard 面板（演示数据）](docs/images/pane-zh.png)
+cc-taskboard 用在两个地方：一个**本地网页**，在一处看清、管理你所有的会话和工单；以及 **Claude Code 侧边栏里的看板面板**，不离开对话就能随时管理。
 
 **网页**（`http://localhost:4790`）：所有项目、所有会话在一块看板上；打开工单、评论、验收，或为它开一个新会话。
 
@@ -20,6 +16,10 @@ cc-taskboard 用在两个地方：**Claude Code 侧边栏里的看板面板**，
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark-zh.png">
   <img src="docs/images/board-zh.png" alt="cc-taskboard 网页：全部项目看板（演示数据）">
 </picture>
+
+**Claude Code 侧边栏**：同一块看板就在每个会话旁边；干活时随时查看、挪动工单、写评论。
+
+![Claude Code 侧边栏里的 cc-taskboard 面板（演示数据）](docs/images/pane-zh.png)
 
 ## 安装
 
