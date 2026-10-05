@@ -357,6 +357,15 @@ async function jumpTo($: $, sessions: Sess[]) {
   }
   $.ui.toast(t('jump.none'))
 }
+// WB-21: a new session for a ticket through the app's own link, claude://code/new?q=&folder=: the app switches to a new-session
+// screen in the ticket's folder with the claim line typed in, and the person presses send. That first prompt, 「认领 <KEY>」,
+// marks it spawned (markSpawned), so its title follows the ticket. The pane's own 进行中 moves still only leave a chip.
+async function newSessionFor($: $, tk: Ticket) {
+  const folder = tk.worktree || projOf(tk.project)?.root || me.cwd
+  const q = `认领 ${tk.key}：先调用 mcp__cc-taskboard__ticket action:update key:${tk.key} work:true，再看 ticket 描述和评论开工。`
+  const r = await $.process.run(['open', `claude://code/new?q=${encodeURIComponent(q)}&folder=${encodeURIComponent(folder)}`], { timeoutMs: 5000 }).catch(() => null)
+  $.ui.toast(r?.exitCode === 0 ? t('toast.spawn', tk.key) : t('spawn.fail'))
+}
 async function staleNow($: $, b: Board) {
   const spawned = await spawnedList($)
   const titles: Record<string, string> = {}
@@ -880,10 +889,7 @@ export const register: Register = on => {
           {wk ? null : (
             <Box gap={1} flexWrap="wrap">
               <Text color={MUTE}>{t('hand')}</Text>
-              <Button key="spawn" label={t('spawn')} variant="primary" onPress={() => ask(
-                spawnPrompt(sel),
-                t('toast.spawn', sel.key),
-              )} />
+              <Button key="spawn" label={t('spawn')} variant="primary" onPress={() => newSessionFor($, sel)} />
               <Button key="go-here" label={t('go.here')} onPress={() => ask(`继续做 ${sel.key}「${zhTitle(sel)}」：先用 mcp__cc-taskboard__ticket update work:true 认领，再按描述、要点和评论推进。`, t('toast.go', sel.key))} />
               {owner ? (
                 <Button key="ask-owner" label={t('ask.owner', owner.label || owner.name)} onPress={async () => {
@@ -1098,6 +1104,7 @@ export const register: Register = on => {
           ) : null}
           <Button key="peek-open" label={t('peek.open')} variant="primary" onPress={() => setView({ sel: tk.key, peek: null })} />
           {tk.sids.some(x => x !== sid) ? <Button key="peek-jump" label={t('jump.go')} onPress={() => jumpTo($, linkedOf(tk))} /> : null}
+          {wk ? null : <Button key="peek-spawn" label={t('spawn')} onPress={() => newSessionFor($, tk)} />}
           {wk ? null : actsOf(tk).map(a => <Button key={`peek-${a.id}`} label={a.label} onPress={() => ticketAct($, a.id, tk.key)} />)}
         </Box>,
         // Surfaces without Select (mobile): the detail page's button rows.
