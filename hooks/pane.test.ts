@@ -232,7 +232,7 @@ test('a spawned session keeps its title as 【date - status】KEY topic', async 
   expect(r1.sessionTitle).toMatch(/^【[A-Z][a-z]{2} \d{1,2} - in progress】SVC-1 登录页面$/)
   // WB-24: Claude's own move answers with the rename to make, by the desktop id, at once.
   const moved = await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'update', key: 'SVC-1', col: 'done' })
-  expect(String(moved.result)).toMatch(/set_session_title[\s\S]*session_id: local_x  title: 【[A-Z][a-z]{2} \d{1,2} - review】SVC-1 登录页面$/)
+  expect(String(moved.result)).toMatch(/set_session_title[\s\S]*session_id: local_x  title: 【[A-Z][a-z]{2} \d{1,2} - review】SVC-1 登录页面$/m)
   const r2 = await $.classic.UserPromptSubmit({ prompt: 'next' })
   expect(r2.sessionTitle).toMatch(/ - review】SVC-1 登录页面$/)
   // Creating another ticket from here makes it current, yet the title keeps the KEY it already names.
@@ -1176,7 +1176,11 @@ test('a claim from a no-folder session still titles it and joins the ticket boar
   files.set(`${DATA}/events/other.jsonl`, JSON.stringify({ k: 'create', key: 'SVC-1', project: 'SVC', title: '登录页面', title_en: 'Login page', col: 'todo', src: 'me', t: 1, sid: 'other' }) + '\n')
   await $.session.start({ cwd: `${HOME}/Library/Application Support/Claude/scratch-workspaces/a/b/scratch-x`, surface: null, isInteractive: false })
   await $.prompt.submit({ text: '<system-reminder>\nscratch workspace\n</system-reminder>\n认领 SVC-1:先调用 mcp__cc-taskboard__ticket action:update key:SVC-1 work:true', wait: false })
-  await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'update', key: 'SVC-1', work: true })
+  // The ticket's other session sits in the board's sidebar group: the claim answer opens with filing this one beside it.
+  files.set(`${DATA}/sessions/other.json`, JSON.stringify({ sid: 'other', cwd: `${HOME}/web-app`, name: 'web-app', project: 'SVC', seen: Date.now(), state: 'idle', app: 'local_peer' }))
+  const claimed = String((await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'update', key: 'SVC-1', work: true })).result)
+  expect(claimed).toMatch(/^已更新 SVC-1，设为本 session 当前 ticket\n先做完这几步再干别的：\n1\. 归侧边栏分组：.*local_peer.*mcp__ccd_sidebar__move_sessions/)
+  expect(claimed.indexOf('move_sessions')).toBeLessThan(claimed.indexOf('描述：'))
   expect(JSON.parse(files.get(`${DATA}/sessions/sess-1.json`)).project).toBe('SVC')
   expect((await $.classic.UserPromptSubmit({ prompt: 'go' })).sessionTitle).toMatch(/ - in progress】SVC-1 登录页面$/)
 })

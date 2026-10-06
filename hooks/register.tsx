@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Board, Col, Lang, Priority, Resolved, Sess, Ticket, View } from '../types'
 import {
   BAD, DATA_DIR, LEGACY_DATA_DIR, COL_IDS, COLS, DUE, I18N, MUTE, OK, PRIORITIES, PRIORITY_COLOR, PROJECTS, WARN,
-  LIVE_MS, ago, appIdOf, appSessionsDir, appTitle as coreAppTitle, archivedCanceled, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, missingIds, newSessionUrl, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, sessionUrl, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
+  LIVE_MS, ago, appIdOf, appSessionsDir, appTitle as coreAppTitle, archivedCanceled, claimLine, groupPeer, boardForWeek, cancelEv, cells, clean, clip, colOf, days, descOf, dueColor, dueIn, fold, hhmm, isOpen, isoWeek, keepTo, md, missingLang, openBlockers, ownerOf, missingIds, newSessionUrl, parseLabels, parseLines, planInit, projectFor, projectsJson, projName, projOf, resolveTheme, restoreTo, scanRow, scanText, sessionUrl, setProjects, sessionTitle, splitCode, staleTitles, titleKey, titleOf, tl, weeksBack,
 } from './core.ts'
 import type { AppIo, Ev, InitPlan, K, ScanRow } from './core.ts'
 
@@ -277,7 +277,7 @@ async function ticketAct($: $, act: string, key: string, reason = '') {
 
 // Has this session's Claude prepare a new session for a ticket: spawn_task leaves a chip the person clicks to enter, or ignores.
 const spawnPrompt = (tk: Ticket) =>
-  `为 ${tk.key}「${zhTitle(tk)}」开一个新 session：调用 mcp__ccd_session__spawn_task，title 用「${sessionTitle(tk.key, zhTitle(tk), 'doing', [Date.now()])}」，cwd 用这张票实际所在的、有提交的 git 仓库根目录（先看要点、描述和分支里的路径，没有再用「${tk.worktree || projOf(tk.project)?.root || me.cwd}」；上层目录如果是还没有提交的 git 仓库，开不了 worktree，不能用，要选这张票真正所在的仓库），先用 git status 看相关材料有没有提交——worktree 里只有已提交的文件，未提交的要在 prompt 里写明原目录绝对路径、并叮嘱不要 git add；prompt 第一句写「认领 ${tk.key}：先调用 mcp__cc-taskboard__ticket action:update key:${tk.key} work:true，再看 ticket 描述和评论开工」，后面附上描述、要点和最近评论。`
+  `为 ${tk.key}「${zhTitle(tk)}」开一个新 session：调用 mcp__ccd_session__spawn_task，title 用「${sessionTitle(tk.key, zhTitle(tk), 'doing', [Date.now()])}」，cwd 用这张票实际所在的、有提交的 git 仓库根目录（先看要点、描述和分支里的路径，没有再用「${tk.worktree || projOf(tk.project)?.root || me.cwd}」；上层目录如果是还没有提交的 git 仓库，开不了 worktree，不能用，要选这张票真正所在的仓库），先用 git status 看相关材料有没有提交——worktree 里只有已提交的文件，未提交的要在 prompt 里写明原目录绝对路径、并叮嘱不要 git add；prompt 第一句写「${claimLine(tk.key)}」，后面附上描述、要点和最近评论。`
 
 // The person moving a ticket in the pane. Starting one (待开工 → 进行中) also readies a new session for it,
 // unless a session is already working it; Claude's own moves (认领, edits) never spawn. Web moves: spawnForWebStarts.
@@ -449,7 +449,7 @@ export const register: Register = on => {
         '可写 desc（Markdown 描述）、priority（P0 最急 ~ P3）、comment（一条评论，用户在看板上看得到）。',
         '标题和描述是双语的：title / desc 写中文，title_en / desc_en 写英文。create 时、以及 update 改标题或描述时，两种语言必须同时给；用户用英文写的，你补中文进 title / desc。评论、要点不用翻译。',
         'labels 标签（如 缺陷 / 特性 / hold，整组替换）；due 截止日期 YYYY-MM-DD；blockedBy 被哪些 ticket 卡着（整组替换，卡点完成或取消后自动不再算阻塞）；parent 父 ticket（拆子任务时用）。传 "" 或 [] 清除。',
-        `用户要为某张 ticket 开新 session 时：调用 mcp__ccd_session__spawn_task，title 用「【<今天的英文月日，如 Oct 3> - in progress】<KEY> <标题>」（session 命名惯例，例：${sessionTitle('APP-3', '[UI] 登录页改版', 'doing', [Date.now()])}），cwd 用这张票实际所在的、有提交的 git 仓库根目录（先看要点/描述/分支里的路径，没有再用项目默认：${PROJECTS.filter(p => p.root).map(p => `${p.id}=${p.root}`).join('，') || '无'}；上层目录如果是还没有提交的 git 仓库，开不了 worktree，不能用，要选这张票真正所在的仓库），新 session 的 worktree 只含已提交的文件，所以要在 prompt 里写明未提交材料的原目录绝对路径；prompt 第一句写「认领 <KEY>：先调用 mcp__cc-taskboard__ticket action:update key:<KEY> work:true，再看 ticket 描述和评论开工」，后面附上描述与要点。`,
+        `用户要为某张 ticket 开新 session 时：调用 mcp__ccd_session__spawn_task，title 用「【<今天的英文月日，如 Oct 3> - in progress】<KEY> <标题>」（session 命名惯例，例：${sessionTitle('APP-3', '[UI] 登录页改版', 'doing', [Date.now()])}），cwd 用这张票实际所在的、有提交的 git 仓库根目录（先看要点/描述/分支里的路径，没有再用项目默认：${PROJECTS.filter(p => p.root).map(p => `${p.id}=${p.root}`).join('，') || '无'}；上层目录如果是还没有提交的 git 仓库，开不了 worktree，不能用，要选这张票真正所在的仓库），新 session 的 worktree 只含已提交的文件，所以要在 prompt 里写明未提交材料的原目录绝对路径；prompt 第一句写「${claimLine('<KEY>')}」，后面附上描述与要点。`,
         'git commit、gh pr create、gh pr merge、向用户提问会自动更新状态，不用手动改；其余变化（例如阻塞、搁置、完成但没走 PR）用 update 改 col。',
         '初始化向导（新装、或用户要按最近的 session 重建 / 补全看板时）：① action:"init" 不带 plan，拿最近 50 个 session 的扫描（标题、目录、分支、PR、app 记的状态摘要、已挂在哪张票）；② 归纳成方案：board 怎么分（默认每个项目 / 仓库一个；id 是编号前缀，match 是匹配 cwd 的正则）、一个 session 主题一张票、同主题已有票就挂上去、纯查询的跳过，按状态摘要定 col；③ 带 plan 调 init 拿预览，用 AskUserQuestion 给用户看并确认或调整；④ 用户确认后带同一个 plan 和 confirm:true 再调一次才写入。可重跑：已挂上的 session 会自动跳过。',
       ].join('\n'),
@@ -598,7 +598,7 @@ export const register: Register = on => {
     const why = (a.comment ?? a.note ?? '').trim()
     const needWhy = '你不能直接取消工单：传 col:"canceled" 时必须用 comment（或 note）写理由，它会作为「建议取消」等用户在看板上确认；用户在对话里明确说取消时才带 userAccepted:true。'
     const proposeNote = '。已提议取消，等用户在看板确认（放进了「等我拍板」，标为建议取消；用户也可能选择保留）'
-    await loadAll($)
+    const loaded = await loadAll($)
     if (a.action === 'init') return { result: await initWizard($, a.plan, a.confirm) }
     const b = fold(all, [], Date.now())
     // Every ticket ever, archived ones included: relations may point at them.
@@ -696,8 +696,14 @@ export const register: Register = on => {
     const bl = openBlockers({ ...tk, ...meta }, b.tickets)
     const extra = a.work ? `${bl.length ? `；注意：还被 ${bl.join('、')} 卡着` : ''}${tk.due ? `；截止 ${tk.due}` : ''}；描述：${descOf(tk, 'zh') || '无'}；评论 ${tk.comments.length} 条${tk.comments.length ? `，最近：${tk.comments.slice(-3).map(c => `${c.by === 'me' ? '用户' : 'Claude'}：${c.text}`).join(' / ')}` : ''}` : ''
     const stale = lastBoard ? (await staleNow($, lastBoard)).filter(x => x.key === tk.key) : []
-    const titleNote = stale.length ? `。这张票的状态变了，看板开出来的这些会话标题要跟着改，现在依次调用 mcp__ccd_session_mgmt__set_session_title（session_id 和 title 照抄）：\n${titleLines(stale)}` : ''
-    return { result: `已更新 ${tk.key}${a.work ? '，设为本 session 当前 ticket' : ''}${reviewNote}${propose ? proposeNote : ''}${extra}${lackNote(tk.key, tk)}${titleNote}` }
+    // WB-41: these lead the answer as numbered steps; a note after the description got skipped.
+    const peer = a.work && (await isSpawned($)) ? groupPeer(loaded.sessions, tk, sid) : undefined
+    const steps = [
+      stale.length && `这张票的状态变了，看板开出来的这些会话标题要跟着改：依次调用 mcp__ccd_session_mgmt__set_session_title（session_id 和 title 照抄）\n${titleLines(stale)}`,
+      peer && `归侧边栏分组：用 mcp__ccd_session_mgmt__get_session 看 self 和 ${peer} 的 group；本会话还没分组、${peer} 有分组时，调用 mcp__ccd_sidebar__move_sessions（session_ids ["self"]，group_id 用 ${peer} 的 group.id）`,
+    ].filter(Boolean)
+    const stepNote = steps.length ? `\n先做完这几步再干别的：\n${steps.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n` : ''
+    return { result: `已更新 ${tk.key}${a.work ? '，设为本 session 当前 ticket' : ''}${reviewNote}${propose ? proposeNote : ''}${stepNote}${extra}${lackNote(tk.key, tk)}` }
   })
 
   // ---------- 面板 ----------

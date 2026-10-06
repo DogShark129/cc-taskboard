@@ -429,9 +429,15 @@ export function staleTitles(b: Board, spawned: string[], titles: Record<string, 
 
 // The desktop app's own links, one copy for the pane (open …) and the web app (the browser opens them). WB-36.
 // WB-21: a new session in the ticket's project root with the claim line typed in; that first prompt marks it spawned.
+// WB-41: the steps the claim answer opens with (title, sidebar group) are named here too: a note at its end got skipped.
+export const claimLine = (key: string) => `认领 ${key}：先调用 mcp__cc-taskboard__ticket action:update key:${key} work:true，做完它返回的开头几步（改会话标题、归侧边栏分组），再看 ticket 描述和评论开工`
 export function newSessionUrl(key: string, folder?: string) {
-  const q = `认领 ${key}：先调用 mcp__cc-taskboard__ticket action:update key:${key} work:true，再看 ticket 描述和评论开工。`
-  return `claude://code/new?q=${encodeURIComponent(q)}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`
+  return `claude://code/new?q=${encodeURIComponent(`${claimLine(key)}。`)}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`
+}
+// WB-41: the desktop session whose sidebar group a new session of tk joins: tk's own newest other session, else its board's.
+export function groupPeer(sessions: Sess[], tk: Ticket, sid: string) {
+  const s = sessions.filter(x => x.sid !== sid && x.app && !x.isGone).sort((x, y) => y.seen - x.seen)
+  return (s.find(x => tk.sids.includes(x.sid)) ?? s.find(x => x.project === tk.project))?.app
 }
 // WB-30: an existing session, by its desktop id (list_sessions' `link`).
 export const sessionUrl = (app: string) => `claude://claude.ai/epitaxy/${app}`
