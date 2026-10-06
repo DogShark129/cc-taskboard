@@ -1178,8 +1178,11 @@ test('a claim from a no-folder session still titles it and joins the ticket boar
   await $.prompt.submit({ text: '<system-reminder>\nscratch workspace\n</system-reminder>\n认领 SVC-1:先调用 mcp__cc-taskboard__ticket action:update key:SVC-1 work:true', wait: false })
   // The ticket's other session sits in the board's sidebar group: the claim answer opens with filing this one beside it.
   files.set(`${DATA}/sessions/other.json`, JSON.stringify({ sid: 'other', cwd: `${HOME}/web-app`, name: 'web-app', project: 'SVC', seen: Date.now(), state: 'idle', app: 'local_peer' }))
+  // The new-session screen can start it in manual: the first step switches it to auto.
+  await $.classic.UserPromptSubmit({ prompt: '认领 SVC-1', permission_mode: 'default' })
   const claimed = String((await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'update', key: 'SVC-1', work: true })).result)
-  expect(claimed).toMatch(/^已更新 SVC-1，设为本 session 当前 ticket\n先做完这几步再干别的：\n1\. 归侧边栏分组：.*local_peer.*mcp__ccd_sidebar__move_sessions/)
+  expect(claimed).toMatch(/^已更新 SVC-1，设为本 session 当前 ticket\n先做完这几步再干别的：\n1\. 本会话现在是 default 模式.*set_session_permission_mode.*"auto"/)
+  expect(claimed).toMatch(/\n2\. 归侧边栏分组：.*local_peer.*mcp__ccd_sidebar__move_sessions/)
   expect(claimed.indexOf('move_sessions')).toBeLessThan(claimed.indexOf('描述：'))
   expect(JSON.parse(files.get(`${DATA}/sessions/sess-1.json`)).project).toBe('SVC')
   expect((await $.classic.UserPromptSubmit({ prompt: 'go' })).sessionTitle).toMatch(/ - in progress】SVC-1 登录页面$/)

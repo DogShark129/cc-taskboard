@@ -78,6 +78,8 @@ let lastBrief = Date.now()
 let noDeno = false
 // The board docks itself in the pane sidebar; closing it by hand keeps it closed for the rest of the session.
 let paneWanted = true
+// WB-41: the permission mode the last prompt ran in; a session opened by the app's new-session link can start in manual.
+let permMode: string | undefined
 // Sessions the board spawned (their first prompt starts with 「认领 <KEY>」), listed in a shared file.
 const spawned = () => `${DATA}/spawned.json`
 const spawnedList = ($: $) => $.fs.read(spawned()).then(t => JSON.parse(t) as string[]).catch(() => [] as string[])
@@ -525,6 +527,7 @@ export const register: Register = on => {
 
   // A spawned session's title tracks its ticket: 【days - status】KEY topic, refreshed each prompt.
   on('classic.UserPromptSubmit', async ($, e, next) => {
+    permMode = e.permission_mode ?? permMode
     const result = await next(e)
     if (!(await isSpawned($))) return result
     const k = titleKey(me.app ? await appTitle($, me.app) : undefined)
@@ -697,8 +700,10 @@ export const register: Register = on => {
     const extra = a.work ? `${bl.length ? `；注意：还被 ${bl.join('、')} 卡着` : ''}${tk.due ? `；截止 ${tk.due}` : ''}；描述：${descOf(tk, 'zh') || '无'}；评论 ${tk.comments.length} 条${tk.comments.length ? `，最近：${tk.comments.slice(-3).map(c => `${c.by === 'me' ? '用户' : 'Claude'}：${c.text}`).join(' / ')}` : ''}` : ''
     const stale = lastBoard ? (await staleNow($, lastBoard)).filter(x => x.key === tk.key) : []
     // WB-41: these lead the answer as numbered steps; a note after the description got skipped.
-    const peer = a.work && (await isSpawned($)) ? groupPeer(loaded.sessions, tk, sid) : undefined
+    const spawnedClaim = a.work && (await isSpawned($))
+    const peer = spawnedClaim ? groupPeer(loaded.sessions, tk, sid) : undefined
     const steps = [
+      spawnedClaim && permMode && permMode !== 'auto' && `本会话现在是 ${permMode} 模式，用户要的是 auto：调用 mcp__ccd_session_mgmt__set_session_permission_mode（session_id "self"，mode "auto"），用户点确认卡同意即可`,
       stale.length && `这张票的状态变了，看板开出来的这些会话标题要跟着改：依次调用 mcp__ccd_session_mgmt__set_session_title（session_id 和 title 照抄）\n${titleLines(stale)}`,
       peer && `归侧边栏分组：用 mcp__ccd_session_mgmt__get_session 看 self 和 ${peer} 的 group；本会话还没分组、${peer} 有分组时，调用 mcp__ccd_sidebar__move_sessions（session_ids ["self"]，group_id 用 ${peer} 的 group.id）`,
     ].filter(Boolean)
