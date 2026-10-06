@@ -495,7 +495,8 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const today = new Date().setHours(0, 0, 0, 0)
     if (!(me.days ?? []).includes(today)) me.days = [...(me.days ?? []), today]
-    if (/^认领 [A-Z]+-\d+/.test(e.text)) await markSpawned($)
+    // WB-41: not always first: a session the app started with no folder gets a system-reminder ahead of it.
+    if (/(?:^|\n)认领 [A-Z][A-Z0-9]*-\d+/.test(e.text)) await markSpawned($)
     await setState($, 'run')
     // Opened while answering the person's prompt counts as asked, so it seats at any width.
     void openPane($)
@@ -689,7 +690,8 @@ export const register: Register = on => {
     if (a.note) await emit($, { k: 'note', key: tk.key, text: a.note })
     if (Object.keys(meta).length) await emit($, { k: 'meta', key: tk.key, meta })
     if (a.comment) await emit($, { k: 'comment', key: tk.key, by: 'claude', text: a.comment })
-    if (a.work) { me.ticket = tk.key; await saveSess($); await linkHere($, tk) }
+    // WB-41: a session started outside any board's folder (the app's scratch workspace) joins the ticket's board.
+    if (a.work) { me.ticket = tk.key; me.project ??= tk.project; await saveSess($); await linkHere($, tk) }
     if (a.work && !col && (tk.col === 'todo' || tk.col === 'decide')) await move($, tk.key, 'doing', '认领')
     const bl = openBlockers({ ...tk, ...meta }, b.tickets)
     const extra = a.work ? `${bl.length ? `；注意：还被 ${bl.join('、')} 卡着` : ''}${tk.due ? `；截止 ${tk.due}` : ''}；描述：${descOf(tk, 'zh') || '无'}；评论 ${tk.comments.length} 条${tk.comments.length ? `，最近：${tk.comments.slice(-3).map(c => `${c.by === 'me' ? '用户' : 'Claude'}：${c.text}`).join(' / ')}` : ''}` : ''

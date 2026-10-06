@@ -1167,3 +1167,16 @@ test('deno found: no install offer', async ($: any, on: any) => {
   await $.prompt.submit({ text: 'hi', wait: false })
   expect(contexts.at(-1)).not.toContain('deno')
 })
+
+// WB-41: the app may start the new session with no folder: a scratch cwd, a system-reminder ahead of the claim line.
+test('a claim from a no-folder session still titles it and joins the ticket board', async ($: any, on: any) => {
+  on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
+  on('classic.UserPromptSubmit', () => ({}))
+  const files: any = memfs(on)
+  files.set(`${DATA}/events/other.jsonl`, JSON.stringify({ k: 'create', key: 'SVC-1', project: 'SVC', title: '登录页面', title_en: 'Login page', col: 'todo', src: 'me', t: 1, sid: 'other' }) + '\n')
+  await $.session.start({ cwd: `${HOME}/Library/Application Support/Claude/scratch-workspaces/a/b/scratch-x`, surface: null, isInteractive: false })
+  await $.prompt.submit({ text: '<system-reminder>\nscratch workspace\n</system-reminder>\n认领 SVC-1:先调用 mcp__cc-taskboard__ticket action:update key:SVC-1 work:true', wait: false })
+  await $.tool.call({ tool: 'mcp__cc-taskboard__ticket', action: 'update', key: 'SVC-1', work: true })
+  expect(JSON.parse(files.get(`${DATA}/sessions/sess-1.json`)).project).toBe('SVC')
+  expect((await $.classic.UserPromptSubmit({ prompt: 'go' })).sessionTitle).toMatch(/ - in progress】SVC-1 登录页面$/)
+})
