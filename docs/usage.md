@@ -52,7 +52,7 @@ A comment you write on the board (pane, preview or web app) goes to the session 
 
 ## A new session per ticket
 
-"Do in a new session" in the detail view, or dragging a ticket from To do to In progress (when no session is already working on it), asks Claude in the current session to prepare a new session for that ticket with the desktop app's `spawn_task`. That leaves a chip in the conversation; you click it to open the session. It takes one click because a plugin cannot open a session itself: only Claude can call the app's session tools, and `spawn_task` offers a session rather than starting one, so you stay in control of what opens. The new session's first prompt claims the ticket, and its title follows the ticket's status (for example `【Oct 3 - in progress】APP-3 Login page`).
+"Do in a new session" in the detail view, or dragging a ticket from To do to In progress (when no session is already working on it), asks Claude in the current session to prepare a new session for that ticket with the desktop app's `spawn_task`. That leaves a chip in the conversation; you click it to open the session. It takes one click because a plugin cannot open a session itself: only Claude can call the app's session tools, and `spawn_task` offers a session rather than starting one, so you stay in control of what opens. The new session's first prompt claims the ticket and has it investigate the code and propose a plan, which it asks you to approve before changing anything (the ticket waits in Decision meanwhile). Its title follows the ticket's status (for example `【Oct 3 - in progress】APP-3 Login page`).
 
 For a ticket you start from the web app, one live session (the ticket's owner, else the most recently active one) prepares the chip.
 

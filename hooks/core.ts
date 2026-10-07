@@ -430,7 +430,8 @@ export function staleTitles(b: Board, spawned: string[], titles: Record<string, 
 // The desktop app's own links, one copy for the pane (open …) and the web app (the browser opens them). WB-36.
 // WB-21: a new session in the ticket's project root with the claim line typed in; that first prompt marks it spawned.
 // WB-41: the steps the claim answer opens with (title, sidebar group) are named here too: a note at its end got skipped.
-export const claimLine = (key: string) => `认领 ${key}：先调用 mcp__cc-taskboard__ticket action:update key:${key} work:true，做完它返回的开头几步（改会话标题、归侧边栏分组），再看 ticket 描述和评论开工`
+// WB-42: then a plan for the person to approve before any edit; AskUserQuestion parks the ticket in 等我拍板 meanwhile.
+export const claimLine = (key: string) => `认领 ${key}：先调用 mcp__cc-taskboard__ticket action:update key:${key} work:true，做完它返回的开头几步（改会话标题、归侧边栏分组），再看 ticket 描述和评论；先别改代码：调查相关代码，写出实施 plan，用 AskUserQuestion 问用户是否照此执行，同意后再动手`
 export function newSessionUrl(key: string, folder?: string) {
   return `claude://code/new?q=${encodeURIComponent(`${claimLine(key)}。`)}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`
 }
