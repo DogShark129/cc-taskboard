@@ -73,8 +73,8 @@ export type Board = {
 // auto = follow the Claude app; Resolved is what auto turns into.
 export type Resolved = 'light' | 'dark'
 export type Theme = 'auto' | Resolved
-// off: statuses the legend hid; more: sections expanded past their narrow cap; todoOpen / doneOpen / canceledOpen: the folds under the list.
-export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; lang?: Lang; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; off?: Col[]; more?: Col[]; todoOpen?: boolean; doneOpen?: boolean; canceledOpen?: boolean }
+// more: sections expanded past their narrow cap; open: sections the person folded (false) or opened (true), else secOpen's default (WB-43).
+export type View = { proj: string; tab: 'board' | 'feed'; sel: string | null; week?: number; lang?: Lang; themeResolved?: Resolved; peek?: string | null; q?: string; me?: boolean; live?: boolean; more?: Col[]; open?: Partial<Record<Col, boolean>> }
 
 declare module 'claude-code' {
   interface PluginState {

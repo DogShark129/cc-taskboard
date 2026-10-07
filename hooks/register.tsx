@@ -55,6 +55,8 @@ const plain = (md: string) =>
 const EMPTY: Board = { tickets: [], sessions: [], feed: [], weekStart: 0, commitsThisWeek: 0, createdThisWeek: 0 }
 const board = atom({ plugin: 'cc-taskboard', key: 'board' } as const, EMPTY)
 const view = atom({ plugin: 'cc-taskboard', key: 'view' } as const, { proj: 'ALL', tab: 'board', sel: null } as View)
+// WB-43: a status section is open unless the person folded it; to do, done and canceled start folded.
+const secOpen = (v: View, c: Col) => v.open?.[c] ?? !['todo', 'done', 'canceled'].includes(c)
 
 
 
@@ -713,8 +715,13 @@ export const register: Register = on => {
 
   // ---------- 面板 ----------
   // WB-36: a pane row (row.tsx) was clicked: open its preview, or fold it if it was open.
+  // WB-43: a section head (row.tsx with a lead) was clicked: fold that status, or open it.
   on('ui.message', async ($, e, next) => {
-    const key = (e.data as { toggle?: unknown } | null)?.toggle
+    const { toggle: key, fold } = (e.data ?? {}) as { toggle?: unknown; fold?: unknown }
+    if (typeof fold === 'string' && (COL_IDS as string[]).includes(fold)) {
+      await update($, view, cur => ({ ...cur, open: { ...cur.open, [fold]: !secOpen(cur, fold as Col) } }))
+      return {}
+    }
     if (typeof key !== 'string' || !/^[A-Z][A-Z0-9]*-\d+$/.test(key)) return next(e)
     await update($, view, cur => ({ ...cur, peek: cur.peek === key ? null : key }))
     return {}
@@ -981,12 +988,9 @@ export const register: Register = on => {
 
     // ----- board / feed: the focus list (WB-29, mockup v2 option A), native elements only -----
     const wide = width >= 80
-    const off = v.off ?? []
     const more = v.more ?? []
-    const doneOpen = Boolean(v.doneOpen)
-    // Canceled folds like done; a search opens it, so archived hits show.
-    const canceledOpen = Boolean(v.canceledOpen) || Boolean(q)
-    const openOf = (c: Col) => (c === 'todo' ? Boolean(v.todoOpen) : c === 'done' ? doneOpen : canceledOpen)
+    // A search opens every section, so its hits show (archived canceled ones too).
+    const openOf = (c: Col) => Boolean(q) || secOpen(v, c)
 
     // Header
     const boardTitle = t('board.title', proj ? pn(proj.id) : t('all.projects'))
@@ -1043,10 +1047,8 @@ export const register: Register = on => {
       </Box>
     )
 
-    // Status ribbon and legend: every status in scope, sized by count; a legend press hides / shows one.
-    const ORDER: Col[] = ['decide', 'doing', 'review', 'follow', 'todo', 'done', 'canceled']
-    const present = ORDER.filter(c => count(c) > 0)
-    const shown = present.filter(c => !off.includes(c))
+    // Status ribbon: every status in scope, sized by count, in board order. WB-43: no legend under it; the section heads name and count each.
+    const shown = COL_IDS.filter(c => count(c) > 0)
     const total = shown.reduce((n, c) => n + count(c), 0)
     const ribbon = (() => {
       if (!total) return null
@@ -1068,20 +1070,6 @@ export const register: Register = on => {
       lens[big] = (lens[big] ?? 1) + n - lens.reduce((a, l) => a + l, 0)
       return <Text key="ribbon">{shown.map((c, i) => <Text key={`rb-${c}`} color={colOf(c).color}>{'▇'.repeat(Math.max(1, lens[i] ?? 1))}</Text>)}</Text>
     })()
-    const legend = present.length ? (
-      <Box gap={2} flexWrap="wrap">
-        {present.map(c => {
-          const hidden = off.includes(c)
-          return (
-            <Box key={`lg-${c}`} gap={1}>
-              <Text color={colOf(c).color} dimColor={hidden}>●</Text>
-              <Button key={`legend-${c}`} plain dimColor={hidden} label={`${cn(c)} ${count(c)}`} onPress={() => setView({ off: hidden ? off.filter(x => x !== c) : [...off, c] })} />
-            </Box>
-          )
-        })}
-      </Box>
-    ) : null
-
     // The preview of one ticket, inline under its row at every width (WB-32: an absolute popup got clipped by a short list). Past weeks are read-only.
     const preview = (tk: Ticket, c: { fg?: string; mute: string }) => {
       const desc = descOf(tk, lang) ? plain(descOf(tk, lang)) : tk.notes.map(n => `- ${plain(n).join(' ')}`)
@@ -1089,11 +1077,8 @@ export const register: Register = on => {
         if (to === tk.col) return
         const col = to as Col
         await personMove($, tk.key, col, '你手动移动')
-        // The ticket goes where it now belongs: that section shown, a folded one opened.
-        await update($, view, cur => ({
-          ...cur, peek: null, off: (cur.off ?? []).filter(x => x !== col),
-          ...(col === 'todo' ? { todoOpen: true } : col === 'done' ? { doneOpen: true } : col === 'canceled' ? { canceledOpen: true } : {}),
-        }))
+        // The ticket goes where it now belongs: that section opened if it was folded.
+        await update($, view, cur => ({ ...cur, peek: null, open: { ...cur.open, [col]: true } }))
       }
       const toPri = (p: string) => { if (p !== (tk.priority ?? '')) void emit($, { k: 'meta', key: tk.key, meta: { priority: p as Priority } }) } // '' clears it
       return [
@@ -1182,44 +1167,41 @@ export const register: Register = on => {
       ]
     }
 
-    // A status section: colored dot, bold name, muted count; narrow decide shows its first 5 behind a more / less Button.
+    // A status section (WB-43: every status, board order): its head folds or opens it. The head is one Client where the
+    // surface draws one (row.tsx with a lead, so the whole line clicks like a row), else a dot and a plain Button.
+    // Narrow decide shows its first 5 behind a more / less Button.
     const section = (c: Col, cap = 0) => {
       const items = scope.filter(x => x.col === c)
-      if (off.includes(c) || !items.length) return null
-      const capped = cap > 0 && items.length > cap
+      if (!items.length) return null
+      const open = openOf(c)
+      const capped = open && cap > 0 && items.length > cap
       const expanded = more.includes(c)
+      const head = els.Client
+        ? <els.Client key={`fold-${c}`} module="./row.tsx" width="100%" props={{
+            id: c, keyColor: colOf(c).color, title: '', dim: false, bg: null, hoverBg: surf.tint, right: [], post: { fold: c },
+            lead: [{ text: '●', color: colOf(c).color }, { text: cn(c), color: surf.text, bold: true }, { text: String(items.length), color: surf.mute }, { text: open ? '⌄' : '›', color: surf.mute }],
+          }} />
+        : (
+          <Box key={`hd-${c}`} gap={1}>
+            <Text color={colOf(c).color}>●</Text>
+            <Button key={`fold-${c}`} plain label={`${cn(c)} ${items.length} ${open ? '⌄' : '›'}`} onPress={() => setView({ open: { ...v.open, [c]: !secOpen(v, c) } })} />
+          </Box>
+        )
       return (
         <Box key={`sec-${c}`} flexDirection="column">
           <Box gap={1}>
-            <Text color={colOf(c).color}>●</Text>
-            <Text bold color={surf.text}>{cn(c)}</Text>
-            <Text color={surf.mute}>{items.length}</Text>
+            <Box flexGrow={1} flexShrink={1}>{head}</Box>
             {capped ? <Button key={`more-${c}`} plain dimColor label={expanded ? t('lane.collapse') : t('more.n', items.length - cap)}
               onPress={() => setView({ more: expanded ? more.filter(x => x !== c) : [...more, c] })} /> : null}
           </Box>
-          {(capped && !expanded ? items.slice(0, cap) : items).flatMap(row)}
+          {open ? (capped && !expanded ? items.slice(0, cap) : items).flatMap(row) : null}
         </Box>
       )
     }
-    const FOLDS: Col[] = ['todo', 'done', 'canceled']
-    const foldRow = (
-      <Box key="folds" justifyContent="space-between" gap={1} flexWrap="wrap">
-        <Box gap={2} flexWrap="wrap">
-          {FOLDS.map(c => count(c) ? (
-            <Box key={`fd-${c}`} gap={1}>
-              <Text color={colOf(c).color}>●</Text>
-              <Button key={`fold-${c}`} plain dimColor label={`${cn(c)} ${count(c)} ${openOf(c) ? '⌄' : '›'}`}
-                onPress={() => setView(c === 'todo' ? { todoOpen: !v.todoOpen } : c === 'done' ? { doneOpen: !doneOpen } : { canceledOpen: !v.canceledOpen })} />
-            </Box>
-          ) : null)}
-        </Box>
-        {els.Link ? <els.Link key="web-link" href={WEB_LINK} label={t('w.link')} /> : null}
-      </Box>
-    )
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
         {header}
-        {v.tab === 'board' && (ribbon || legend) ? <Box flexDirection="column">{ribbon}{legend}</Box> : null}
+        {v.tab === 'board' ? ribbon : null}
         {v.tab === 'feed' ? (
           <Box flexDirection="column">
             {b.feed.filter(f => v.proj === 'ALL' || f.key.startsWith(`${v.proj}-`)).slice(0, Math.max(5, (e.viewport?.rows ?? 30) - 12)).map((f, i) => (
@@ -1233,10 +1215,9 @@ export const register: Register = on => {
           <Text color={MUTE}>{t('empty.noboards')}</Text>
         ) : (
           <Box flexDirection="column" gap={1}>
-            {scope.length ? (['decide', 'doing', 'review', 'follow'] as Col[]).map(c => section(c, !wide && c === 'decide' ? 5 : 0))
+            {scope.length ? COL_IDS.map(c => section(c, !wide && c === 'decide' ? 5 : 0))
               : <Text color={MUTE}>{t(filtered ? 'empty.filter' : wk ? 'empty.past' : 'empty.week')}</Text>}
-            {foldRow}
-            {FOLDS.filter(openOf).map(c => section(c))}
+            {els.Link ? <Box key="foot" justifyContent="flex-end"><els.Link key="web-link" href={WEB_LINK} label={t('w.link')} /></Box> : null}
           </Box>
         )}
       </Box>

@@ -64,6 +64,14 @@ const noRule = async (ui: any) => expect(JSON.stringify(await drawnOf(ui)).match
 const openRow = async (ui: any, key: string) => (await ui.find({ key: `open-${key}` }))?.type === 'Client'
   ? ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: `open-${key}` })
   : ui.press({ key: `open-${key}` })
+// WB-43: a section head is a Client too (row.tsx with a lead), else a Button: click it, or read its label ('待开工 1 ›').
+const foldSec = async (ui: any, c: string) => (await ui.find({ key: `fold-${c}` }))?.type === 'Client'
+  ? ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: `fold-${c}` })
+  : ui.press({ key: `fold-${c}` })
+const headOf = async (ui: any, c: string) => {
+  const el = await ui.find({ key: `fold-${c}` })
+  return el?.type === 'Client' ? el.props.props.lead.slice(1).map((x: any) => x.text).join(' ') : el?.props.label
+}
 const rowOf = async (ui: any, key: string) => {
   const el = await ui.find({ key: `open-${key}` })
   if (!el) return undefined
@@ -93,7 +101,7 @@ const expand = (n: any): any => n?.type === 'Client' && n.props?.module === 'hoo
   : n && typeof n === 'object' ? { ...n, ...(n.children ? { children: n.children.map(expand) } : {}) } : n
 const drawnOf = async (ui: any) => expand(await ui.drawn())
 // ui.find for a Text, row Texts included
-const findText = async (ui: any, text: string) => nodes(await drawnOf(ui), n => n?.type === 'Text' && (n.children ?? []).join('') === text)[0]
+const findText = async (ui: any, text: string | RegExp) => nodes(await drawnOf(ui), n => n?.type === 'Text' && (typeof text === 'string' ? (n.children ?? []).join('') === text : text.test((n.children ?? []).join(''))))[0]
 // Walk a drawn tree.
 const walk = (n: any, f: (n: any) => void) => { f(n); for (const c of n?.children ?? []) if (typeof c === 'object') walk(c, f) }
 const nodes = (tree: any, f: (n: any) => boolean) => { const out: any[] = []; walk(tree, n => { if (f(n)) out.push(n) }); return out }
@@ -264,9 +272,9 @@ test('en mode shows no Chinese UI text', async ($: any, on: any) => {
   await $.tool.call({ tool: 'Bash', command: 'git commit -m x' }) // the activity also carries a commit
   for (const cols of [140, 60]) {
     const ui = await $.ui.mount(PANE('desktop', cols))
-    expect(await ui.find({ type: 'Text', text: /^(进行中|待审核)$/ })).toBeDefined() // SVC-1 is in review, after the first round in doing
+    expect(await findText(ui, /^(进行中|待审核)$/)).toBeDefined() // SVC-1 is in review, after the first round in doing
     await ui.press({ key: 'lang' })
-    expect(await ui.find({ type: 'Text', text: /^(In review|In progress)$/ })).toBeDefined()
+    expect(await findText(ui, /^(In review|In progress)$/)).toBeDefined()
     await noHan(ui)
     await ui.press({ key: 'tab-feed' })
     await noHan(ui)
@@ -284,7 +292,7 @@ test('en mode shows no Chinese UI text', async ($: any, on: any) => {
     await noHan(ui)
     await ui.press({ key: 'back' })
     await ui.press({ key: 'lang' })
-    expect(await ui.find({ type: 'Text', text: /等我拍板|进行中|待审核/ })).toBeDefined() // back to zh, which the next mount starts from
+    expect(await findText(ui, /等我拍板|进行中|待审核/)).toBeDefined() // back to zh, which the next mount starts from
     await ui.unmount()
   }
 })
@@ -342,8 +350,9 @@ test('detail at 140 cols: Selects, move, row key, search, quick filter', async (
   await ui.unmount()
 })
 
-// WB-29: the focus list. Sections decide, doing, review, follow; empty ones absent; todo / done / canceled folded below.
-test('sections in order, empty ones absent; todo and done folded behind their fold Buttons', async ($: any, on: any) => {
+// WB-43: every status is one section, in board order; empty ones absent. To do / done / canceled start folded;
+// a head click folds or opens any of them.
+test('sections in board order, empty ones absent; heads fold and open them, to do and done folded at first', async ($: any, on: any) => {
   on('prompt.submit', (_$: any, e: any) => ({ text: e.text }))
   memfs(on)
   await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
@@ -354,26 +363,43 @@ test('sections in order, empty ones absent; todo and done folded behind their fo
   await call($)({ action: 'create', title: 'done one', col: 'done', userAccepted: true }) // SVC-5
   for (const cols of [140, 60]) {
     const ui = await $.ui.mount(PANE('desktop', cols))
-    expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing', 'sec-review']) // no 待跟进: empty
-    expect(await ui.find({ key: 'open-SVC-4' })).toBeUndefined()
+    expect(await sections(ui)).toEqual(['sec-decide', 'sec-todo', 'sec-doing', 'sec-review', 'sec-done']) // no 待跟进: empty
+    expect(await rowsIn(ui, 'sec-todo')).toEqual([])
     expect(await ui.find({ key: 'open-SVC-5' })).toBeUndefined()
-    expect((await ui.find({ key: 'fold-todo' }))?.props.label).toBe('待开工 1 ›')
+    expect(await headOf(ui, 'decide')).toBe('等我拍板 1 ⌄')
+    expect(await headOf(ui, 'todo')).toBe('待开工 1 ›')
     expect(await ui.find({ key: 'fold-canceled' })).toBeUndefined() // nothing canceled
-    await ui.press({ key: 'fold-todo' })
-    expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing', 'sec-review', 'sec-todo'])
-    expect(await ui.find({ key: 'open-SVC-4' })).toBeDefined()
-    await ui.press({ key: 'fold-done' })
-    expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing', 'sec-review', 'sec-todo', 'sec-done'])
+    await foldSec(ui, 'todo')
+    expect(await rowsIn(ui, 'sec-todo')).toEqual(['row-SVC-4'])
+    expect(await headOf(ui, 'todo')).toBe('待开工 1 ⌄')
+    await foldSec(ui, 'done')
     expect((await rowOf(ui, 'SVC-5'))?.dimColor).toBe(true) // done rows are dim
-    await ui.press({ key: 'fold-todo' })
-    await ui.press({ key: 'fold-done' })
-    expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing', 'sec-review'])
-    // one line per ticket, a hover tint on its keyed Box
+    await foldSec(ui, 'decide') // an open one folds the same way
+    expect(await rowsIn(ui, 'sec-decide')).toEqual([])
+    expect(await headOf(ui, 'decide')).toBe('等我拍板 1 ›')
+    for (const c of ['todo', 'done', 'decide']) await foldSec(ui, c) // back as they were, for the next width
+    expect(await rowsIn(ui, 'sec-decide')).toEqual(['row-SVC-3'])
+    expect(await ui.find({ key: 'open-SVC-4' })).toBeUndefined()
+    // one line per ticket, a hover tint on its keyed Box; the head tints the same
     const r = await byKey(ui, 'row-SVC-1')
     expect(r.hover).toEqual({ backgroundColor: '#f4f3ef' })
+    expect((await byKey(ui, 'head-review')).hover).toEqual({ backgroundColor: '#f4f3ef' })
     await expectNoEmoji(ui)
     await ui.unmount()
   }
+})
+
+// Without a Client (mobile) the head is a dot and a plain Button.
+test('mobile: a section head is a plain Button that folds and opens it', async ($: any, on: any) => {
+  memfs(on)
+  await $.session.start({ cwd: `${HOME}/web-app`, surface: 'mobile', isInteractive: true })
+  await call($)({ action: 'create', title: 'todo one', col: 'todo' }) // SVC-1
+  const ui = await $.ui.mount(PANE('mobile', 60))
+  expect((await ui.find({ key: 'fold-todo' }))?.type).toBe('Button')
+  expect(await headOf(ui, 'todo')).toBe('待开工 1 ›')
+  await foldSec(ui, 'todo')
+  expect(await rowsIn(ui, 'sec-todo')).toEqual(['row-SVC-1'])
+  await ui.unmount()
 })
 
 test('narrow: decide shows 5 rows, the more Button expands and collapses it; wide shows all', async ($: any, on: any) => {
@@ -395,7 +421,8 @@ test('narrow: decide shows 5 rows, the more Button expands and collapses it; wid
   await w.unmount()
 })
 
-test('legend Buttons hide and show a status: its section and its ribbon segment', async ($: any, on: any) => {
+// WB-43: no legend; the ribbon has one segment per status in scope, in board order.
+test('ribbon: one segment per status in scope; no legend', async ($: any, on: any) => {
   memfs(on)
   await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
   await call($)({ action: 'create', title: 'decide one', col: 'decide' })
@@ -403,19 +430,11 @@ test('legend Buttons hide and show a status: its section and its ribbon segment'
   await call($)({ action: 'create', title: 'doing two', col: 'doing' })
   const ui = await $.ui.mount(PANE('desktop', 140))
   const svg = async () => (await ui.find({ type: 'Svg' }))?.props
-  expect((await ui.find({ key: 'legend-doing' }))?.props.label).toBe('进行中 2')
-  expect(await ui.find({ key: 'legend-review' })).toBeUndefined() // no tickets: no legend entry
+  expect(await ui.find({ key: 'legend-doing' })).toBeUndefined()
   expect((await svg()).alt).toBe('等我拍板 1 · 进行中 2')
   expect([(await svg()).height, (await svg()).width]).toEqual([6, undefined])
   expect((await svg()).source).toContain('rx="3"')
   expect((await svg()).source).toContain(`fill="${colOf('doing').color}"`)
-  await ui.press({ key: 'legend-doing' })
-  expect(await sections(ui)).toEqual(['sec-decide'])
-  expect((await ui.find({ key: 'legend-doing' }))?.props.dimColor).toBe(true)
-  expect((await svg()).alt).toBe('等我拍板 1')
-  await ui.press({ key: 'legend-doing' })
-  expect(await sections(ui)).toEqual(['sec-decide', 'sec-doing'])
-  expect((await ui.find({ key: 'legend-doing' }))?.props.dimColor).toBeFalsy()
   await ui.unmount()
 })
 
@@ -429,7 +448,7 @@ test('terminal ribbon: one line of runs in the status colors, width - 4 cells', 
     const ui = await $.ui.mount(PANE('terminal', cols))
     expect(await ui.find({ type: 'Svg' })).toBeUndefined()
     const runs = nodes(await drawnOf(ui), n => n.type === 'Text' && n.children?.length && n.children.every((c: any) => String(c?.children?.[0] ?? '').startsWith('▇')))[0].children
-    expect(runs.map((r: any) => r.props.color)).toEqual(['decide', 'doing', 'todo'].map(c => colOf(c).color))
+    expect(runs.map((r: any) => r.props.color)).toEqual(['decide', 'todo', 'doing'].map(c => colOf(c).color)) // board order
     expect(runs.map((r: any) => r.children.join('')).join('')).toMatch(/^▇+$/)
     expect(runs.map((r: any) => r.children.join('')).join('').length).toBe(cols - 4)
     await ui.unmount()
@@ -679,19 +698,19 @@ test('labels, due, blockedBy, parent, canceled: tool validation, list, rows, det
   expect(await c({ action: 'list', q: 'hold' })).toMatch(/SVC-2 \[待开工 截止 2020-01-01 卡于 SVC-1 父 SVC-1\] #缺陷 #hold child/)
   expect(await c({ action: 'update', key: 'SVC-2', work: true })).toContain('还被 SVC-1 卡着')
 
-  // no 已取消 fold until something is canceled; the overdue row shows its due date in the late color
+  // no 已取消 section until something is canceled; the overdue row shows its due date in the late color
   const ui = await $.ui.mount(PANE('desktop', 160))
   expect(await ui.find({ key: 'fold-canceled' })).toBeUndefined()
   expect((await findText(ui, '截止 01-01'))?.props.color).toBe('#d9777a')
   await c({ action: 'update', key: 'SVC-1', col: 'canceled', userAccepted: true }) // the person said so in chat (WB-28)
-  expect((await ui.find({ key: 'fold-canceled' }))?.props.label).toBe('已取消 1 ›')
+  expect(await headOf(ui, 'canceled')).toBe('已取消 1 ›')
   expect(await c({ action: 'list' })).not.toContain('SVC-1 ')
   await expectNoEmoji(ui)
   await ui.unmount()
 
   // narrow detail: relations both ways, overdue, panel edits
   const nu = await $.ui.mount(PANE('desktop', 60))
-  await nu.press({ key: 'fold-canceled' }) // canceled is folded like done: open it first (WB-28)
+  await foldSec(nu, 'canceled') // canceled is folded like done: open it first (WB-28)
   await openRow(nu, 'SVC-1')
   await nu.press({ key: 'peek-open' })
   expect(await nu.find({ key: 'rel-blocks-SVC-2' })).toBeDefined()
@@ -717,7 +736,7 @@ test('the status Select 待开工 → 进行中 asks Claude to spawn a session; 
   await $.session.start({ cwd: `${HOME}/web-app`, surface: 'desktop', isInteractive: true })
   await call($)({ action: 'create', title: '[T-42] 登录页面', col: 'todo' }) // SVC-1
   const ui = await $.ui.mount(PANE('desktop', 140))
-  await ui.press({ key: 'fold-todo' })
+  await foldSec(ui, 'todo')
   await openRow(ui, 'SVC-1')
   await ui.select({ key: 'peek-status', value: 'doing' })
   expect(files.get(LOG)).toContain('"col":"doing","text":"你手动移动"')
@@ -871,17 +890,17 @@ async function striped($: any, on: any, cols: number, mode = 'light') {
   return $.ui.mount(PANE('desktop', cols))
 }
 
-// Done is folded until its fold Button is pressed, at both widths; a live row says so in the live color.
+// Done is folded until its head is clicked, at both widths; a live row says so in the live color.
 for (const cols of [140, 60]) {
-  test(`done folded by default, the fold Button opens and closes it; live marker (${cols})`, async ($: any, on: any) => {
+  test(`done folded by default, its head opens and closes it; live marker (${cols})`, async ($: any, on: any) => {
     const ui = await striped($, on, cols)
     const done = () => rowOf(ui, 'SVC-3')
     expect(await done()).toBeUndefined()
-    expect((await ui.find({ key: 'fold-done' }))?.props.label).toBe('已完成 1 ›')
-    await ui.press({ key: 'fold-done' })
+    expect(await headOf(ui, 'done')).toBe('已完成 1 ›')
+    await foldSec(ui, 'done')
     expect((await done())?.label).toBe('做完的')
-    expect((await ui.find({ key: 'fold-done' }))?.props.label).toBe('已完成 1 ⌄')
-    await ui.press({ key: 'fold-done' })
+    expect(await headOf(ui, 'done')).toBe('已完成 1 ⌄')
+    await foldSec(ui, 'done')
     expect(await done()).toBeUndefined()
     const live = nodes(await byKey(ui, 'row-SVC-1'), n => n.type === 'Text' && n.props?.color === LIVE_COLOR)
     expect(live.map(n => n.children.join(''))).toEqual(['在做'])
@@ -897,7 +916,7 @@ test('done expanded: no Chinese in en, no rules, no emoji', async ($: any, on: a
   await ui0.unmount()
   for (const cols of [140, 60]) {
     const ui = await $.ui.mount(PANE('desktop', cols))
-    await ui.press({ key: 'fold-done' })
+    await foldSec(ui, 'done')
     expect(await ui.find({ key: 'open-SVC-3' })).toBeDefined()
     await ui.press({ key: 'lang' })
     expect((await rowOf(ui, 'SVC-3'))?.label).toBe('finished one')
@@ -905,7 +924,7 @@ test('done expanded: no Chinese in en, no rules, no emoji', async ($: any, on: a
     await noRule(ui)
     await expectNoEmoji(ui)
     await ui.press({ key: 'lang' })
-    await ui.press({ key: 'fold-done' }) // folded again for the next width
+    await foldSec(ui, 'done') // folded again for the next width
     await ui.unmount()
   }
 })
@@ -929,7 +948,7 @@ for (const surface of ['desktop', 'mobile'] as const) {
     const buttons = async (prefix: string) => nodes(await drawnOf(ui), n => n.type === 'Button' && String(n.props?.key).startsWith(prefix))
     expect((await buttons('p-')).map(b => b.props.key)).toEqual(['p-SVC', 'p-WB', 'p-INF', 'p-ME']) // ALL is the active tab at the start: a Text
     expect(nodes(await drawnOf(ui), n => n.type === 'Box' && /^pj-/.test(n.props?.key ?? '')).map(n => n.props.key)).toEqual(['pj-ALL', 'pj-SVC', 'pj-WB', 'pj-INF', 'pj-ME'])
-    for (const k of ['p-', 'qf-', 'tab-', 'lang', 'legend-', 'fold-', 'open-']) for (const b of await buttons(k)) {
+    for (const k of ['p-', 'qf-', 'tab-', 'lang', 'fold-', 'open-']) for (const b of await buttons(k)) {
       expect(b.props.plain).toBe(true)
       expect(b.props.variant).toBeUndefined()
     }
@@ -1009,9 +1028,9 @@ test('WB-28: Claude cancel lands in decide with a reason; the person keeps, conf
   await c({ action: 'update', key: 'SVC-1', col: 'canceled', note: '重复了' })
   await ui.press({ key: 'peek-confirm' })
   expect(log()).toContain('"key":"SVC-1","col":"canceled","by":"me","text":"重复了"')
-  // canceled folds like done: the fold Button, no row until opened
+  // canceled folds like done: no row until its head opens it
   expect(await ui.find({ key: 'open-SVC-1' })).toBeUndefined()
-  await ui.press({ key: 'fold-canceled' })
+  await foldSec(ui, 'canceled')
   expect(await ui.find({ key: 'open-SVC-1' })).toBeDefined()
   // its preview, still open under the row: 恢复 sends it back to the column it left before the proposal
   await ui.press({ key: 'peek-restore' })
@@ -1021,7 +1040,7 @@ test('WB-28: Claude cancel lands in decide with a reason; the person keeps, conf
   expect(await ui.find({ type: 'Text', text: /你取消了「A」：重复了/ })).toBeDefined()
   await ui.press({ key: 'tab-board' })
   // any ticket: the preview's 取消工单 (no reason), then the detail's reason box, then 恢复
-  await ui.press({ key: 'fold-todo' })
+  await foldSec(ui, 'todo')
   await openRow(ui, 'SVC-2')
   await ui.press({ key: 'peek-cancel' })
   expect(log()).toContain('"key":"SVC-2","col":"canceled","by":"me","text":""')
@@ -1072,7 +1091,7 @@ for (const cols of [140, 60]) {
     await ui.select({ key: 'peek-status', value: 'canceled' })
     expect(files.get(LOG)).toContain('"key":"SVC-1","col":"canceled","by":"me","text":""')
     expect(await ui.find({ key: 'pv-SVC-1' })).toBeUndefined()
-    expect(await sections(ui)).toEqual(['sec-canceled']) // opened below the fold row, where it now is
+    expect(await rowsIn(ui, 'sec-canceled')).toEqual(['row-SVC-1']) // its section opened, where it now is
     await ui.unmount()
   })
 }
