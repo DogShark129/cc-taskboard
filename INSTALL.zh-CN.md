@@ -19,7 +19,7 @@
    claude plugin install cc-taskboard@cc-taskboard
    ```
 
-   在 Claude Code 会话里等价的写法是先 `/plugin marketplace add DogShark129/cc-taskboard`，再 `/plugin install cc-taskboard@cc-taskboard`。需要有这个 GitHub 仓库的读权限。
+   在 Claude Code 会话里等价的写法是先 `/plugin marketplace add DogShark129/cc-taskboard`，再 `/plugin install cc-taskboard@cc-taskboard`。
 
 4. **检查 Deno、git 和 gh。** 网页版跑在 Deno 2.x 上。`command -v deno` 找不到时，先问用户，再用 `brew install deno` 安装（没有 Homebrew 就用 `curl -fsSL https://deno.land/install.sh | sh`）。没有 Deno 时，面板和 ticket 工具照常能用，只有网页用不了。缺 git 或 gh 时，告诉用户自动状态规则需要它们，不要替用户装。
 
@@ -44,7 +44,7 @@
 }
 ```
 
-每个队友仍然要做上面的第 1 步，并且要有仓库的读权限。
+每个队友仍然要做上面的第 1 步。
 
 ## 从克隆加载（开发用）
 

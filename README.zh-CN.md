@@ -97,7 +97,15 @@ Claude 请你输入 `/reload-plugins` 时照做，之后它会主动提出初始
 - 支持 function-hook 插件的 Claude Code（在 2.1.286 上开发和测试）。
 - macOS（已测试）。Linux 和 WSL 上看板和网页版应该能用，但没有桌面 app 相关功能（主题跟随、会话标题、初始化向导扫描最近会话），它们读 app 在 `~/Library/Application Support/Claude/` 下的文件。暂不支持原生 Windows。
 - 可选：网页版需要 [Deno](https://deno.com) 2.x；自动状态规则用到 `git` 和 `gh`。
-- 有这个 GitHub 仓库的读权限。
+## 它会运行和存储什么
+
+所有东西都留在本机，插件不向任何外部服务发送数据。
+
+- **数据**：ticket、评论和会话状态都是 `~/.claude/cc-taskboard/`（或 `CC_TASKBOARD_DATA`）下的文件，见[数据](docs/usage.zh-CN.md#数据)。
+- **后台网页服务**：会话开始时如果 `127.0.0.1:4790` 没有响应，插件会通过 `/bin/sh` 用 Deno 在后台启动网页版，会话结束后它仍在运行。它只监听本机回环地址，没有登录，日志写在数据目录的 `web.log`。
+- **运行的命令**：`git`（会话的分支和仓库根目录）、`claude agents --json`（会话列表，用于会话标题和初始化向导）、`defaults read -g AppleInterfaceStyle`（主题）、`curl`（探测本机网页服务），以及你在看板上跳转或新开会话时用 `open` 打开 Claude 桌面 app 自己的链接。
+- **数据目录以外的文件**：只读取桌面 app 的 `~/Library/Application Support/Claude/config.json` 来跟随主题，不往那里写任何东西。
+- **对你的 Claude 会话**：观察会话里的 Bash、Edit / Write 和 AskUserQuestion 调用来移动 ticket，从不拦截它们。每次提问时加入看板指令。在这些时候向会话发送提示：为 ticket 新开会话时、你评论或询问这个会话负责的 ticket 时、新开会话的标题要跟着 ticket 改时。为 ticket 新开的会话如果不在 auto 模式，会让 Claude 把它切到 auto，你在 app 的确认卡上同意或拒绝。
 
 ## 文档
 

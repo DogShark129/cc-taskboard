@@ -97,7 +97,15 @@ The automatic moves apply to the session's current ticket. Details: [docs/usage.
 - Claude Code with function-hook plugins (built and tested on 2.1.286).
 - macOS (tested). On Linux and WSL the board and the web app should work, without the desktop-app features (theme following, session titles, the init wizard's scan of recent sessions), which read the app's files under `~/Library/Application Support/Claude/`. Native Windows is not supported yet.
 - Optional: [Deno](https://deno.com) 2.x for the web app; `git` and `gh` for the automatic status rules.
-- Read access to the GitHub repository.
+## What it runs and stores
+
+Everything stays on your machine; the plugin sends nothing to any outside service.
+
+- **Data**: tickets, comments and session state are files under `~/.claude/cc-taskboard/` (or `CC_TASKBOARD_DATA`); see [Data](docs/usage.md#data).
+- **A background web server**: when a session starts and nothing answers on `127.0.0.1:4790`, the plugin starts the web app with Deno through `/bin/sh`, detached, so it keeps running after the session ends. It listens on loopback only, has no login, and logs to `web.log` in the data directory.
+- **Commands**: `git` (the session's branch and repository root), `claude agents --json` (the session list, for titles and the init wizard), `defaults read -g AppleInterfaceStyle` (the theme), `curl` (pings the local web server), and `open` with the Claude desktop app's own links when you jump to or start a session from the board.
+- **Files outside its data directory**: it reads the desktop app's `~/Library/Application Support/Claude/config.json` for the theme, and writes nothing there.
+- **Your Claude sessions**: it watches the session's Bash, Edit / Write and AskUserQuestion calls to move tickets, and never blocks them. It adds board instructions to each prompt. It sends a prompt to a session when a session starts for a ticket, when you comment on or ask about the session's ticket, and when a spawned session's title has to follow its ticket. A session started for a ticket that is not in auto mode asks Claude to switch it to auto; you accept or decline in the app's confirmation card.
 
 ## Docs
 

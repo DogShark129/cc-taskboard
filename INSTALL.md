@@ -19,7 +19,7 @@ The repository is its own plugin marketplace. These steps work for a person or f
    claude plugin install cc-taskboard@cc-taskboard
    ```
 
-   Inside a Claude Code session the same is `/plugin marketplace add DogShark129/cc-taskboard`, then `/plugin install cc-taskboard@cc-taskboard`. You need read access to the GitHub repository.
+   Inside a Claude Code session the same is `/plugin marketplace add DogShark129/cc-taskboard`, then `/plugin install cc-taskboard@cc-taskboard`.
 
 4. **Check Deno, git and gh.** The web page runs on Deno 2.x. If `command -v deno` finds nothing, ask the user first, then install it with `brew install deno` (without Homebrew: `curl -fsSL https://deno.land/install.sh | sh`). Without Deno the pane and the ticket tool still work; only the web page does not. If git or gh is missing, tell the user that the automatic status rules need them; do not install them for the user.
 
@@ -44,7 +44,7 @@ To offer the plugin in a repository your team shares, add this to that repositor
 }
 ```
 
-Each teammate still needs step 1 above and read access to the repository.
+Each teammate still needs step 1 above.
 
 ## From a clone (for development)
 
